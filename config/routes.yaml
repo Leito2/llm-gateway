@@ -1,26 +1,63 @@
-# Aliases requested by clients → ordered fallback chains.
-# P1/P2 never route to paid providers; 'smart_paid' is only enabled for P3's final test.
+# Aliases requested by clients → ordered fallback chains (reordered at runtime by health: breaker, quota, EWMA TTFT).
+# Free tiers (groq, google) cost $0 but have quotas (config/providers.yaml); ONLY synthetic data is sent to them.
+# Paid providers (anthropic) appear only in 'smart_paid', enabled for P3's final test.
+# Every chain ends in a local model so the gateway keeps answering with no internet (Go predecessor: Gemma 3 1B on CPU).
 aliases:
   fast:
     chain:
+      - { provider: groq, model: "llama-3.1-8b-instant" }
       - { provider: ollama, model: "qwen3:1.7b" }
+      - { provider: ollama, model: "gemma3:1b" }
       - { provider: mock, model: "mock-fast" }
     max_tokens: 256
     ttft_timeout_s: 5
+    hedge: true
+    semantic_cache: true
   smart:
     chain:
+      - { provider: google, model: "gemma-4-31b-it" }
+      - { provider: groq, model: "llama-3.3-70b-versatile" }
       - { provider: ollama, model: "qwen3:1.7b" }
+      - { provider: ollama, model: "gemma3:1b" }
       - { provider: mock, model: "mock-smart" }
     max_tokens: 768
-  judge:
+    hedge: true
+    semantic_cache: true
+  judge:                         # bulk judging (P2/P3/P4): local, different family than the agents
     chain:
-      - { provider: ollama, model: "gemma3:4b" }     # different family than the agent (self-preference bias)
+      - { provider: ollama, model: "gemma3:4b" }
       - { provider: mock, model: "mock-judge" }
     max_tokens: 512
     cache: true
+    semantic_cache: false        # judgments must be exact-cached only
+    priority: batch
+  judge_golden:                  # "golden evaluator" (Gemma 4 31B) for judge validation subsets
+    chain:
+      - { provider: google, model: "gemma-4-31b-it" }
+      - { provider: mock, model: "mock-judge" }
+    max_tokens: 1024
+    cache: true
+    semantic_cache: false
+    priority: batch
+  vision:                        # P4 multimodal fact-auditing
+    chain:
+      - { provider: google, model: "gemma-4-31b-it" }
+      - { provider: mock, model: "mock-vision" }
+    max_tokens: 768
+    semantic_cache: false
+  extract:                       # P4 knowledge-graph extraction (structured output)
+    chain:
+      - { provider: google, model: "gemma-4-26b-a4b-it" }
+      - { provider: groq, model: "llama-3.3-70b-versatile" }
+      - { provider: ollama, model: "qwen3:1.7b" }
+    max_tokens: 1024
+    cache: true
+    semantic_cache: false
+    priority: batch
   smart_paid:
     chain:
       - { provider: anthropic, model: "claude-haiku-4-5" }
+      - { provider: groq, model: "llama-3.3-70b-versatile" }
       - { provider: ollama, model: "qwen3:1.7b" }
     max_tokens: 768
     cache: true

@@ -1,0 +1,23 @@
+# Provider endpoints and outbound quotas. VERIFY free-tier limits and model ids when implementing (they change).
+# Quotas are enforced with token buckets in Redis so the gateway switches provider BEFORE receiving a 429.
+providers:
+  mock:
+    kind: mock
+  ollama:
+    kind: ollama
+    base_url_env: GW_OLLAMA_BASE_URL
+    concurrency: 2               # 4 GB VRAM: adaptive limiter starts here
+  groq:
+    kind: openai_compat
+    base_url: "https://api.groq.com/openai/v1"
+    api_key_env: GW_GROQ_API_KEY
+    quotas: { rpm: 30, tpm: 6000 }          # placeholder — verify per model
+  google:
+    kind: openai_compat
+    base_url: "https://generativelanguage.googleapis.com/v1beta/openai"
+    api_key_env: GW_GOOGLE_API_KEY
+    quotas: { rpm: 15, rpd: 1000 }          # placeholder — verify (Google AI Studio free tier)
+  anthropic:
+    kind: anthropic
+    api_key_env: GW_ANTHROPIC_API_KEY
+    paid: true

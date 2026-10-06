@@ -1,8 +1,11 @@
 # 🛡️ llm-gateway
 
-> An OpenAI-compatible LLM gateway written from scratch in Python — multi-provider fallback, circuit breakers,
-> **atomic budget enforcement**, exact + semantic caching, and SSE streaming with end-to-end cancellation.
-> Shared by three portfolio systems: real-time fraud detection, a System 1/System 2 router, and a live RAG platform.
+> An OpenAI-compatible LLM gateway written from scratch in Python — multi-provider fallback (Groq, Gemma 4 via
+> Google AI Studio, Ollama, Anthropic), mandatory circuit breakers, hedged requests, **atomic budget enforcement**,
+> a layered semantic cache with calibrated thresholds, edge guardrails, and SSE streaming with end-to-end cancellation.
+> Successor of my Go [llm-edge-gateway](https://github.com/Leito2/llm-edge-gateway) — every capability kept, its limits fixed.
+> Shared by four portfolio systems: real-time fraud detection, a System 1/System 2 router, a live RAG platform,
+> and a GraphRAG multi-agent research system.
 
 **Status:** 🟡 M0 bootstrap (structure, configs, CI, health endpoint). See [`PLAN.md`](PLAN.md) for the full design (Spanish).
 
@@ -15,13 +18,15 @@ _To be filled with measured numbers (overhead p95, budget under concurrency, cac
 - API gateways and the OpenAI-compatible contract
 - Timeouts per phase, retries with jitter, circuit breakers, bulkheads
 - Budgets under concurrency: reserve → settle
-- Exact vs semantic caching (and false hits)
+- Exact vs semantic caching (and false hits): namespaces, calibrated thresholds, lexical guards, verifiers
+- Hedged requests, adaptive concurrency and load shedding
+- Edge guardrails: prompt injection and PII
 - Server-Sent Events and cancellation
 ### 3. Architecture · 4. Design Decisions · 5. Journey of a Request
 
 ## Part II — Components (Concept → How it works here → Technical details)
 ## Part III — Resilience and Cost Control in Depth
-## Part IV — Proof (G1–G8: overhead, budget, fallback, cancellation, cache, contracts, chaos)
+## Part IV — Proof (G1–G15, EARS traceability, Go predecessor and LiteLLM comparison)
 ## Part V — Run It Yourself
 
 ### Prerequisites
