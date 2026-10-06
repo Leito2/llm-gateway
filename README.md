@@ -7,8 +7,6 @@
 > Shared by four portfolio systems: real-time fraud detection, a System 1/System 2 router, a live RAG platform,
 > and a GraphRAG multi-agent research system.
 
-- ⚡ **Streams with Server-Sent Events (SSE):** OpenAI-compatible token streaming (`text/event-stream`), with end-to-end cancellation, stall detection and cached answers replayed as streams.
-
 **Status:** 🟡 M0 bootstrap (structure, configs, CI, health endpoint). See [`PLAN.md`](PLAN.md) for the full design (Spanish).
 
 ## TL;DR — Results at a Glance
@@ -24,6 +22,12 @@ _To be filled with measured numbers (overhead p95, budget under concurrency, cac
 - Hedged requests, adaptive concurrency and load shedding
 - Edge guardrails: prompt injection and PII
 - Server-Sent Events and cancellation
+### Key technologies at a glance
+- **OpenAI-compatible API** — any client or SDK works without changes.
+- **Circuit breakers and fallback** — if a provider fails, traffic moves to the next one automatically.
+- **Semantic cache** — similar questions are answered from cache, saving cost and time.
+- **Atomic budget in Redis** — spending can never exceed the limit, even under heavy concurrency.
+- **SSE (Server-Sent Events)** — answers are streamed token by token, and stop if the client disconnects.
 ### 3. Architecture · 4. Design Decisions · 5. Journey of a Request
 
 ## Part II — Components (Concept → How it works here → Technical details)
