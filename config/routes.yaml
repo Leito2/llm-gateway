@@ -1,0 +1,27 @@
+# Aliases requested by clients → ordered fallback chains.
+# P1/P2 never route to paid providers; 'smart_paid' is only enabled for P3's final test.
+aliases:
+  fast:
+    chain:
+      - { provider: ollama, model: "qwen3:1.7b" }
+      - { provider: mock, model: "mock-fast" }
+    max_tokens: 256
+    ttft_timeout_s: 5
+  smart:
+    chain:
+      - { provider: ollama, model: "qwen3:1.7b" }
+      - { provider: mock, model: "mock-smart" }
+    max_tokens: 768
+  judge:
+    chain:
+      - { provider: ollama, model: "gemma3:4b" }     # different family than the agent (self-preference bias)
+      - { provider: mock, model: "mock-judge" }
+    max_tokens: 512
+    cache: true
+  smart_paid:
+    chain:
+      - { provider: anthropic, model: "claude-haiku-4-5" }
+      - { provider: ollama, model: "qwen3:1.7b" }
+    max_tokens: 768
+    cache: true
+    semantic_cache: true

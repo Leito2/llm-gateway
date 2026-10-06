@@ -1,0 +1,23 @@
+# Standalone stack for developing and benchmarking the gateway.
+# P1/P2/P3 include the gateway service in their own compose files (build: ../llm-gateway).
+services:
+  llm-gateway:
+    build: .
+    env_file: .env
+    ports: ["8080:8080"]
+    depends_on: [redis]
+    extra_hosts: ["host.docker.internal:host-gateway"]   # reach Ollama running natively on Windows
+    mem_limit: 400m
+
+  redis:
+    image: redis:8                     # Redis 8: includes the query engine (vector search) — verify in M6
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb"]
+    ports: ["6379:6379"]
+    mem_limit: 200m
+
+  prometheus:
+    image: prom/prometheus:latest       # pin a version in M8
+    profiles: ["obs"]
+    volumes: ["./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    ports: ["9090:9090"]
+    mem_limit: 300m

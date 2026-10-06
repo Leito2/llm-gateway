@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+
+# Environment & secrets
+.env
+*.pem
+*.key
+config/clients.yaml
+
+# Data, models, results (generated — never commit raw data or weights)
+data/
+models/
+mlruns/
+*.parquet
+*.onnx
+*.safetensors
+docs/results/*/
+!docs/results/.gitkeep
+
+# Infra state
+.terraform/
+*.tfstate
+*.tfstate.*
+checkpoints/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

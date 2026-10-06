@@ -1,0 +1,1 @@
+"""Alias → provider chain resolution."""

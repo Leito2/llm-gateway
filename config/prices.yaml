@@ -1,0 +1,7 @@
+# USD per 1M tokens. VERIFY against the provider's pricing page before any paid run.
+anthropic:
+  claude-haiku-4-5: { input: 1.00, output: 5.00 }
+ollama:
+  default: { input: 0.0, output: 0.0 }
+mock:
+  default: { input: 0.0, output: 0.0 }

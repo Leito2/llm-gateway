@@ -1,0 +1,41 @@
+# 🛡️ llm-gateway
+
+> An OpenAI-compatible LLM gateway written from scratch in Python — multi-provider fallback, circuit breakers,
+> **atomic budget enforcement**, exact + semantic caching, and SSE streaming with end-to-end cancellation.
+> Shared by three portfolio systems: real-time fraud detection, a System 1/System 2 router, and a live RAG platform.
+
+**Status:** 🟡 M0 bootstrap (structure, configs, CI, health endpoint). See [`PLAN.md`](PLAN.md) for the full design (Spanish).
+
+## TL;DR — Results at a Glance
+_To be filled with measured numbers (overhead p95, budget under concurrency, cache hit rate) — milestone M9._
+
+## Part I — The Big Picture
+### 1. The Problem: every service calling LLMs on its own
+### 2. Core Concepts Primer
+- API gateways and the OpenAI-compatible contract
+- Timeouts per phase, retries with jitter, circuit breakers, bulkheads
+- Budgets under concurrency: reserve → settle
+- Exact vs semantic caching (and false hits)
+- Server-Sent Events and cancellation
+### 3. Architecture · 4. Design Decisions · 5. Journey of a Request
+
+## Part II — Components (Concept → How it works here → Technical details)
+## Part III — Resilience and Cost Control in Depth
+## Part IV — Proof (G1–G8: overhead, budget, fallback, cancellation, cache, contracts, chaos)
+## Part V — Run It Yourself
+
+### Prerequisites
+Docker Desktop (WSL2), [uv](https://docs.astral.sh/uv/), Python 3.12 (installed by uv), optional Ollama for local models.
+
+```bash
+python scripts/doctor.py      # or: make doctor
+uv sync --dev                 # or: make setup
+uv run pytest -q              # M0 tests: health, schemas, routing config
+make up                       # gateway + Redis in Docker
+curl localhost:8080/v1/models
+```
+
+## Part VI — Reflection (lessons, limitations, why not LiteLLM)
+
+## License
+MIT

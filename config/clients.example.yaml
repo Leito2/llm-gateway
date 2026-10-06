@@ -1,0 +1,5 @@
+# Copy to config/clients.yaml (git-ignored). Store SHA-256 hashes of keys, never raw keys.
+clients:
+  fraud-p1:   { key_sha256: "<sha256>", rpm: 600, budget_usd_per_day: 0 }
+  router-p2:  { key_sha256: "<sha256>", rpm: 600, budget_usd_per_day: 0 }
+  rag-p3:     { key_sha256: "<sha256>", rpm: 300, budget_usd_per_day: 3 }
