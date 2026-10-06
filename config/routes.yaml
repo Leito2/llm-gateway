@@ -1,5 +1,5 @@
 # Aliases requested by clients → ordered fallback chains (reordered at runtime by health: breaker, quota, EWMA TTFT).
-# Free tiers (groq, google) cost $0 but have quotas (config/providers.yaml); ONLY synthetic data is sent to them.
+# Free tiers (groq, google) cost $0 but have quotas (config/providers.yaml); only synthetic/public data or user-consented data (P4 vault excerpts) is sent to them.
 # Paid providers (anthropic) appear only in 'smart_paid', enabled for P3's final test.
 # Every chain ends in a local model so the gateway keeps answering with no internet (Go predecessor: Gemma 3 1B on CPU).
 aliases:

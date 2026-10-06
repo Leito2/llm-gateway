@@ -174,7 +174,7 @@ LiteLLM queda como **referencia y baseline**: el benchmark de overhead compara a
 - **ADR-8 · Caché semántica obligatoria, con defensas en capas.** La caché semántica está **siempre activa** en los aliases elegibles (no apagada por defecto como en la v1 de este plan). La seguridad no viene de apagarla sino de: namespace estricto, umbral calibrado, guardas léxicas, verificador en la zona gris e invalidación por tags.
 - **ADR-9 · Circuit breaker obligatorio con tres disparadores.** Fallas consecutivas (heredado del Go), tasa de error y tasa de llamadas lentas en ventana deslizante. Ningún proveedor se llama sin breaker.
 - **ADR-10 · Un adapter genérico compatible con OpenAI.** Groq, Google AI Studio (endpoint compatible), OpenRouter, vLLM o llama.cpp comparten `OpenAICompatProvider`; solo cambian `base_url`, key, cuotas y quirks declarados en YAML. Anthropic y Ollama nativo tienen adapter propio.
-- **ADR-11 · Free tiers externos como proveedores de $0, con cuotas como ciudadanos de primera.** Cada proveedor declara RPM/TPM/RPD; el gateway los respeta con token buckets salientes y salta al siguiente de la cadena antes de recibir un 429. Solo se envían **datos sintéticos** a los free tiers (sus términos permiten usar el contenido para mejorar productos).
+- **ADR-11 · Free tiers externos como proveedores de $0, con cuotas como ciudadanos de primera.** Cada proveedor declara RPM/TPM/RPD; el gateway los respeta con token buckets salientes y salta al siguiente de la cadena antes de recibir un 429. A los free tiers solo van **datos sintéticos, públicos o del propio usuario con su consentimiento** (las notas de estudio de P4, filtradas antes por Presidio y por una lista de exclusión); sus términos permiten usar el contenido para mejorar productos.
 - **ADR-12 · Hedging con presupuesto.** Se lanza una segunda request a otro proveedor solo si la primera supera el p95 histórico de TTFT del alias, solo en requests sin tokens emitidos y con un tope de hedges (p. ej., ≤ 5% del tráfico). El perdedor se cancela y se liquida lo consumido.
 - **ADR-13 · Guardrails en el borde, no en cada servicio.** Detección de injection y redacción de PII viven en el gateway, con modo `monitor` (solo marca) o `enforce` (bloquea) por alias.
 - **ADR-14 · Diagnóstico en headers.** Cada respuesta dice qué capa de caché respondió, qué proveedor real atendió, cuántos fallbacks hubo y cuánto presupuesto queda. Heredado y ampliado del Go.
@@ -362,7 +362,7 @@ Un span por request con atributos `gen_ai.system`, `gen_ai.request.model`, `gen_
 ### 8.4 Guardrails
 | Guardrail | Cómo | Modo por defecto | Quién lo usa más |
 |---|---|---|---|
-| Prompt injection / jailbreak | Llama Prompt Guard 2 22M en ONNX (CPU), sobre mensajes `user` y sobre contenido marcado como externo (`X-Untrusted-Content`) | `monitor` (marca y mide) | **P4**: el contenido web de Tavily es la superficie de ataque principal |
+| Prompt injection / jailbreak | Llama Prompt Guard 2 22M en ONNX (CPU), sobre mensajes `user` y sobre contenido marcado como externo (`X-Untrusted-Content`) | `monitor` (marca y mide) | **P4**: el contenido web (SearXNG + Crawl4AI) es la superficie de ataque principal |
 | PII | Presidio (emails, teléfonos, tarjetas, documentos de identidad; reconocedores en español) | Redacción en logs y trazas; opcional en el tráfico hacia free tiers | P1–P4 |
 | Tamaño y forma | Límites por alias | `enforce` | Todos |
 
