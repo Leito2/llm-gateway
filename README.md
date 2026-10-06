@@ -7,6 +7,8 @@
 > Shared by four portfolio systems: real-time fraud detection, a System 1/System 2 router, a live RAG platform,
 > and a GraphRAG multi-agent research system.
 
+- ⚡ **Streams with Server-Sent Events (SSE):** OpenAI-compatible token streaming (`text/event-stream`), with end-to-end cancellation, stall detection and cached answers replayed as streams.
+
 **Status:** 🟡 M0 bootstrap (structure, configs, CI, health endpoint). See [`PLAN.md`](PLAN.md) for the full design (Spanish).
 
 ## TL;DR — Results at a Glance
