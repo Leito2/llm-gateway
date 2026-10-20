@@ -328,6 +328,7 @@ Un hit se reenvía como stream de chunks con un ritmo configurable (o de una vez
 - Embedder por defecto: e5-small multilingüe en ONNX int8 (CPU, ~10–20 ms por consulta corta). Alternativa medida: `nomic-embed-text` en Ollama (el del Go).
 - *Write-back* asíncrono y acotado (cola con límite), como en el Go, para no sumar latencia a la respuesta.
 - Memoria: `maxmemory` dedicado y política LFU para las entradas de caché; tamaño por namespace en `/stats`.
+- Almacenamiento y búsqueda detrás de una interfaz `SemanticCacheBackend` (implementación única: `redis_local`). **Redis LangCache** (servicio gestionado, en preview) se descartó como caché principal y queda como baseline opcional en M9: ver [ADR-0002](docs/adr/0002-semantic-cache-own-implementation-not-langcache.md).
 
 ---
 
@@ -406,6 +407,8 @@ Un único `index.html` (HTML, CSS y JS vanilla, sin build, sin dependencias exte
 | G13 | Throughput | Camino de caché exacta con 1, 2 y 4 workers (uvloop) | req/s sostenidos en este hardware, comparados con la cifra del Go |
 | G14 | Guardrails | Set público de prompt injection + prompts benignos en español | Recall y tasa de falsos positivos por umbral |
 | G15 | Cuotas | Free tier simulado con RPM bajo | 0 errores 429 propagados mientras haya otro proveedor |
+
+> **Baseline opcional de caché:** si en M9 Redis LangCache sigue gratis y accesible, G6, G9 y G11 se corren también contra él con los mismos datos y se publica la comparación (ADR-0002).
 
 ---
 
