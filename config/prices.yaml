@@ -1,7 +1,9 @@
-# USD per 1M tokens. VERIFY against each provider's pricing page before any paid run.
+# USD per 1M tokens (the gateway converts to integer micro-dollars, ADR-0004). VERIFY against each provider's pricing page before any paid run.
 # Free tiers cost $0 but keep a REFERENCE price (what it would cost paying) to report cache savings comparably.
 anthropic:
-  claude-haiku-4-5: { input: 1.00, output: 5.00, cache_read: 0.10, cache_write: 1.25 }
+  # Haiku 5.5, prompts <= 100K tokens. Above 100K: input 0.50 / output 2.50 (smart_paid caps input at 100K).
+  # cache_write = 5-minute write (1.25x); 1-hour write is 0.20 (2x). Verify before the paid run (ADR-0005).
+  claude-haiku-5-5: { input: 0.10, output: 0.50, cache_read: 0.01, cache_write: 0.125 }
 groq:
   default: { input: 0.0, output: 0.0, reference_input: 0.59, reference_output: 0.79 }
 google:

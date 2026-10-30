@@ -1,4 +1,7 @@
-# Aliases requested by clients → ordered fallback chains (reordered at runtime by health: breaker, quota, EWMA TTFT).
+# Aliases requested by clients → ordered fallback chains. Providers with an open breaker or exhausted quota are skipped
+# (reordering by EWMA TTFT is stretch). Policy keys: PLAN §3.2, §4, §5, §6. `hedge` has no effect until hedging (stretch) exists.
+# `degraded: true` marks low-quality last resorts: never cached, and skipped by aliases with `allow_degraded: false`.
+# `mock` links are ignored unless GW_ENV is dev or test.
 # Free tiers (groq, google) cost $0 but have quotas (config/providers.yaml); only synthetic/public data or user-consented data (P4 vault excerpts) is sent to them.
 # Paid providers (anthropic) appear only in 'smart_paid', enabled for P3's final test.
 # Every chain ends in a local model so the gateway keeps answering with no internet (Go predecessor: Gemma 3 1B on CPU).
@@ -7,26 +10,28 @@ aliases:
     chain:
       - { provider: groq, model: "llama-3.1-8b-instant" }
       - { provider: ollama, model: "qwen3:1.7b" }
-      - { provider: ollama, model: "gemma3:1b" }
-      - { provider: mock, model: "mock-fast" }
+      - { provider: ollama, model: "gemma3:1b", degraded: true }
+      - { provider: mock, model: "mock-fast", degraded: true }
     max_tokens: 256
     ttft_timeout_s: 5
     hedge: true
     semantic_cache: true
+    cache_ttl_s: 86400
   smart:
     chain:
       - { provider: google, model: "gemma-4-31b-it" }
       - { provider: groq, model: "llama-3.3-70b-versatile" }
       - { provider: ollama, model: "qwen3:1.7b" }
-      - { provider: ollama, model: "gemma3:1b" }
-      - { provider: mock, model: "mock-smart" }
+      - { provider: ollama, model: "gemma3:1b", degraded: true }
+      - { provider: mock, model: "mock-smart", degraded: true }
     max_tokens: 768
     hedge: true
     semantic_cache: true
+    cache_ttl_s: 86400
   judge:                         # bulk judging (P2/P3/P4): local, different family than the agents
     chain:
       - { provider: ollama, model: "gemma3:4b" }
-      - { provider: mock, model: "mock-judge" }
+      - { provider: mock, model: "mock-judge", degraded: true }
     max_tokens: 512
     cache: true
     semantic_cache: false        # judgments must be exact-cached only
@@ -34,17 +39,19 @@ aliases:
   judge_golden:                  # "golden evaluator" (Gemma 4 31B) for judge validation subsets
     chain:
       - { provider: google, model: "gemma-4-31b-it" }
-      - { provider: mock, model: "mock-judge" }
+      - { provider: mock, model: "mock-judge", degraded: true }
     max_tokens: 1024
     cache: true
     semantic_cache: false
     priority: batch
-  vision:                        # P4 multimodal fact-auditing
+    allow_degraded: false        # a golden judgment never silently comes from mock
+  vision:                        # P4 multimodal fact-auditing (stretch)
     chain:
       - { provider: google, model: "gemma-4-31b-it" }
-      - { provider: mock, model: "mock-vision" }
+      - { provider: mock, model: "mock-vision", degraded: true }
     max_tokens: 768
     semantic_cache: false
+    allow_degraded: false
   extract:                       # P4 knowledge-graph extraction (structured output)
     chain:
       - { provider: google, model: "gemma-4-26b-a4b-it" }
@@ -54,11 +61,16 @@ aliases:
     cache: true
     semantic_cache: false
     priority: batch
+    allow_degraded: false
   smart_paid:
     chain:
-      - { provider: anthropic, model: "claude-haiku-4-5" }
+      - { provider: anthropic, model: "claude-haiku-5-5" }   # skipped when the budget does not fit (ADR-0004)
       - { provider: groq, model: "llama-3.3-70b-versatile" }
       - { provider: ollama, model: "qwen3:1.7b" }
     max_tokens: 768
+    max_input_tokens: 100000     # stay in Haiku 5.5's cheap tier (ADR-0005)
+    effort: low                  # client reasoning_effort is clamped to this
+    prompt_cache: true           # cache_control on system prompt + tools when ≥ 512 tokens
     cache: true
     semantic_cache: true
+    cache_ttl_s: 3600            # RAG answers: short TTL + tag invalidation

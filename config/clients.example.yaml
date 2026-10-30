@@ -1,5 +1,10 @@
 # Copy to config/clients.yaml (git-ignored). Store SHA-256 hashes of keys, never raw keys.
+# Create keys with scripts/new_key.py (M8): format gw_<client>_<32 random chars>; the key is shown once.
+# allowed_aliases is fail-closed: a missing or empty list means no alias is allowed (403).
 clients:
-  fraud-p1:   { key_sha256: "<sha256>", rpm: 600, budget_usd_per_day: 0 }
-  router-p2:  { key_sha256: "<sha256>", rpm: 600, budget_usd_per_day: 0 }
-  rag-p3:     { key_sha256: "<sha256>", rpm: 300, budget_usd_per_day: 3 }
+  fraud-p1:   { key_sha256: "<sha256>", rpm: 600, budget_usd_per_day: 0, allowed_aliases: [fast, smart, judge] }
+  router-p2:  { key_sha256: "<sha256>", rpm: 600, budget_usd_per_day: 0, allowed_aliases: [fast, smart, judge, judge_golden] }
+  rag-p3:     { key_sha256: "<sha256>", rpm: 300, budget_usd_per_day: 3, allowed_aliases: [fast, smart, judge, smart_paid] }
+  agents-p4:  { key_sha256: "<sha256>", rpm: 300, budget_usd_per_day: 0, allowed_aliases: [fast, smart, judge, extract, vision] }
+  demo:       { key_sha256: "<sha256>", rpm: 10,  budget_usd_per_day: 0, allowed_aliases: [fast] }   # local UI demo only
+# Admin key for /stats, /metrics and /admin/* is separate: GW_ADMIN_KEY_SHA256 in .env.

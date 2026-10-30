@@ -10,8 +10,11 @@ services:
     mem_limit: 700m   # semantic cache + guardrails ONNX models (v2)
 
   redis:
-    image: redis:8                     # Redis 8: includes the query engine (vector search) — verify in M6
-    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb"]
+    image: redis:8                     # Redis 8: includes the query engine (vector search) — verify in M4
+    # AOF keeps the budget across restarts; volatile-lfu evicts only keys with a TTL (cache), never budget keys (ADR-0004).
+    command: ["redis-server", "--save", "", "--appendonly", "yes", "--appendfsync", "everysec",
+              "--maxmemory", "128mb", "--maxmemory-policy", "volatile-lfu"]
+    volumes: ["redis-data:/data"]
     ports: ["6379:6379"]
     mem_limit: 200m
 
@@ -21,3 +24,18 @@ services:
     volumes: ["./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
     ports: ["9090:9090"]
     mem_limit: 300m
+
+  grafana:
+    image: grafana/grafana:latest       # pin a version in M8; provisioning + versioned dashboard JSON arrive in M8
+    profiles: ["obs"]
+    ports: ["3000:3000"]
+    mem_limit: 200m
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest   # pin a version in M8; gateway exports OTLP when GW_OTEL_ENDPOINT is set
+    profiles: ["obs"]
+    ports: ["16686:16686", "4317:4317"]
+    mem_limit: 200m
+
+volumes:
+  redis-data:
