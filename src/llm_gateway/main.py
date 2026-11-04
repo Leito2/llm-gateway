@@ -1,4 +1,5 @@
 """FastAPI application factory."""
+import asyncio
 from contextlib import asynccontextmanager
 
 import httpx
@@ -10,6 +11,12 @@ from llm_gateway.api.errors import install_error_handlers
 from llm_gateway.providers.config import load_providers
 from llm_gateway.providers.registry import HTTP_TIMEOUT, build_providers
 from llm_gateway.quotas.limiter import QuotaLimiter
+from llm_gateway.resilience.admission import Admission
+from llm_gateway.resilience.breaker import BreakerRegistry
+from llm_gateway.resilience.bulkhead import Bulkhead
+from llm_gateway.resilience.executor import Executor
+from llm_gateway.resilience.lifecycle import Lifecycle
+from llm_gateway.resilience.singleflight import Singleflight
 from llm_gateway.routing.config import load_routes
 from llm_gateway.security.clients import load_clients
 from llm_gateway.settings import Settings
@@ -19,8 +26,10 @@ from llm_gateway.telemetry.stats import Stats
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+    gw = app.state.gateway
+    gw.lifecycle.attach(asyncio.get_running_loop())
     yield
-    await app.state.gateway.http.aclose()
+    await gw.http.aclose()
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -32,15 +41,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     clients.check_routes(routes)
     http = httpx.AsyncClient(timeout=HTTP_TIMEOUT)
 
+    providers = build_providers(settings, provider_config, http)
+    quotas = QuotaLimiter({name: spec.quotas for name, spec in provider_config.providers.items()})
+    breakers = BreakerRegistry()
+    bulkhead = Bulkhead({name: spec.concurrency for name, spec in provider_config.providers.items()
+                         if spec.concurrency})
+
     app = FastAPI(title="llm-gateway", version=__version__, lifespan=_lifespan)
     app.state.gateway = GatewayState(
         settings=settings,
         routes=routes,
-        providers=build_providers(settings, provider_config, http),
+        providers=providers,
         clients=clients,
-        quotas=QuotaLimiter({name: spec.quotas for name, spec in provider_config.providers.items()}),
+        quotas=quotas,
         stats=Stats(),
         http=http,
+        breakers=breakers,
+        bulkhead=bulkhead,
+        admission=Admission(settings.max_in_flight),
+        singleflight=Singleflight(),
+        lifecycle=Lifecycle(settings.drain_timeout_s),
+        executor=Executor(providers, breakers, bulkhead, quotas),
     )
     install_error_handlers(app)
     for module in (health, models, chat, admin, ui):

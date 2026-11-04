@@ -7,4 +7,4 @@ COPY src ./src
 RUN uv sync --no-dev
 COPY config ./config
 EXPOSE 8080
-CMD ["uv", "run", "uvicorn", "llm_gateway.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uv", "run", "uvicorn", "llm_gateway.main:app", "--host", "0.0.0.0", "--port", "8080", "--timeout-graceful-shutdown", "12"]

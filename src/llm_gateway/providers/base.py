@@ -18,6 +18,7 @@ class ProviderError(Exception):
         self.kind = kind
         self.status = status
         self.retry_after = retry_after     # seconds, from the provider's Retry-After header
+        self.provider: str | None = None   # set by the resilience layer, which knows which link failed
 
 
 class Provider(Protocol):

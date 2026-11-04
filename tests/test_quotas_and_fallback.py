@@ -32,7 +32,7 @@ def app_with(groq: MockProvider, quotas: dict | None = None):
     gw = app.state.gateway
     gw.providers["groq"] = groq
     if quotas:
-        gw.quotas = QuotaLimiter(quotas)
+        gw.quotas = gw.executor.quotas = QuotaLimiter(quotas)
     return app, TestClient(app, headers=make_client().headers)
 
 
@@ -92,7 +92,8 @@ def test_req_03_transient_failure_falls_back_and_reports_the_depth():
     _, client = app_with(groq)
     r = client.post("/v1/chat/completions", json=BODY)
     assert r.status_code == 200 and r.headers["x-gateway-provider"].startswith("mock:")
-    assert r.headers["x-gateway-fallback-depth"] == "2" and groq.calls == 1
+    assert r.headers["x-gateway-fallback-depth"] == "2"
+    assert groq.calls == 2        # a 5xx is retried once on the same link (PLAN §4.2) before falling back
 
 
 def test_provider_error_kind_also_falls_back_and_streaming_does_too():

@@ -99,6 +99,7 @@ function headerPills(h, pills) {
   show('X-Alias', 'alias ');
   show('X-Gateway-Provider', '');
   show('X-Gateway-Fallback-Depth', 'tried ');
+  if (h.get('X-Gateway-Singleflight')) pill(pills, 'joined an identical in-flight request');
   const layer = h.get('X-Cache-Layer');
   if (layer) pill(pills, 'cache ' + layer + (h.get('X-Cache-Similarity') ? ' ' + h.get('X-Cache-Similarity') : ''));
   show('X-Max-Tokens-Clamped', 'max_tokens clamped to ', true);

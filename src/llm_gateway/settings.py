@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     prices_file: Path = Path("config/prices.yaml")
     providers_file: Path = Path("config/providers.yaml")
     clients_file: Path = Path("config/clients.yaml")
+    max_in_flight: int = 64                       # global load-shedding limit (PLAN §4.7)
+    drain_timeout_s: float = 8.0                  # SIGTERM: time active streams get to finish (PLAN §4.9)
     redis_url: str = "redis://localhost:6379/0"
     ollama_base_url: str = "http://host.docker.internal:11434/v1"
     groq_api_key: str | None = None               # free tier ($0)
