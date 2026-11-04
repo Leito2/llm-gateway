@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLM Gateway Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,600&display=swap" rel="stylesheet">
+<style>
+/* layout idea: a documentation spine (sticky nav + long column) with one live-feeling workbench in the middle */
+:root{
+  --bg:#f6f7f4; --panel:#ffffff; --ink:#1b2320; --muted:#5d6a64; --line:#dde3de;
+  --accent:#0f6b5a; --accent-ink:#ffffff; --warn:#a15c00; --bad:#b3261e; --good:#1f7a3d; --code:#eef2ee;
+  --display:"Fraunces",Georgia,serif; --body:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#101614; --panel:#17201d; --ink:#e6ece8; --muted:#9aa9a1; --line:#2a3732;
+  --accent:#4cc3a8; --accent-ink:#06211b; --warn:#e0a24a; --bad:#f08a82; --good:#6fd18f; --code:#1e2925; color-scheme:dark;}}
+:root[data-theme="dark"]{
+  --bg:#101614; --panel:#17201d; --ink:#e6ece8; --muted:#9aa9a1; --line:#2a3732;
+  --accent:#4cc3a8; --accent-ink:#06211b; --warn:#e0a24a; --bad:#f08a82; --good:#6fd18f; --code:#1e2925; color-scheme:dark;}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 var(--body)}
+a{color:var(--accent)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 16px}
+header.top{padding:40px 0 24px;border-bottom:1px solid var(--line)}
+h1{font:600 clamp(2rem,5vw,3rem)/1.1 var(--display);margin:0 0 12px;text-wrap:balance}
+h2{font:600 1.7rem/1.2 var(--display);margin:0 0 8px;text-wrap:balance}
+h3{font:600 1.05rem/1.3 var(--body);margin:0 0 6px}
+p{margin:0 0 12px;max-width:68ch}
+.lead{font-size:1.1rem;color:var(--muted);max-width:62ch}
+nav.toc{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+nav.toc .wrap{display:flex;gap:4px;overflow-x:auto;padding-top:8px;padding-bottom:8px}
+nav.toc a{white-space:nowrap;text-decoration:none;color:var(--muted);padding:6px 12px;border-radius:999px;font-size:.9rem}
+nav.toc a:hover,nav.toc a:focus-visible{background:var(--code);color:var(--ink);outline:none}
+section{padding:40px 0;border-bottom:1px solid var(--line)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:24px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.stat b{display:block;font:500 1.5rem var(--mono);font-variant-numeric:tabular-nums}
+.stat span{color:var(--muted);font-size:.85rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px;margin-top:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.card p{font-size:.93rem;color:var(--muted);margin:0}
+code,pre,kbd{font-family:var(--mono);font-size:.86em}
+code{background:var(--code);padding:1px 5px;border-radius:4px}
+pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow-x:auto;margin:0;line-height:1.5}
+pre code{background:none;padding:0}
+.cmd{position:relative;margin:8px 0}
+.cmd button{position:absolute;top:6px;right:6px}
+button,select,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:4px 10px;font-size:.82rem}
+button:hover{border-color:var(--accent)}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);padding:8px 16px;font-size:.95rem;font-weight:500}
+.timeline{list-style:none;padding:0;margin:20px 0 0;display:grid;gap:10px}
+.timeline li{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px}
+.timeline summary{cursor:pointer;padding:12px 16px;display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;list-style:none}
+.timeline summary::-webkit-details-marker{display:none}
+.timeline .tag{font:500 .85rem var(--mono);color:var(--accent);min-width:3.2em}
+.timeline .ttl{font-weight:600}
+.timeline .gist{color:var(--muted);font-size:.92rem;flex-basis:100%}
+.timeline .body{padding:0 16px 14px;font-size:.93rem}
+.timeline .body ul{margin:6px 0 0;padding-left:20px}
+.timeline li.partial{border-left-color:var(--warn)}
+.pill{display:inline-block;font:500 .72rem var(--mono);padding:2px 8px;border-radius:999px;border:1px solid var(--line);background:var(--code);color:var(--muted)}
+.pill.ok{color:var(--good);border-color:var(--good)}
+.pill.warn{color:var(--warn);border-color:var(--warn)}
+.pill.bad{color:var(--bad);border-color:var(--bad)}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:14px}
+.flow span{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font:500 .82rem var(--mono)}
+.flow i{color:var(--muted);font-style:normal}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:600;color:var(--muted);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+tr:last-child td{border-bottom:0}
+td:first-child{font-family:var(--mono);white-space:nowrap}
+/* chat workbench */
+.bench{display:grid;grid-template-columns:260px 1fr;gap:16px;margin-top:16px}
+@media(max-width:760px){.bench{grid-template-columns:1fr}}
+.side{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;display:grid;gap:12px;align-content:start}
+.side label{display:grid;gap:4px;font-size:.82rem;color:var(--muted)}
+.side input[type=text],.side input[type=password],.side select{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg)}
+.side .chk{display:flex;gap:8px;align-items:center;font-size:.9rem;color:var(--ink)}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{flex:1;border:0;border-radius:0;padding:7px;background:var(--bg)}
+.seg button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink)}
+.chat{background:var(--panel);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;min-height:460px}
+.banner{padding:8px 14px;font-size:.82rem;border-bottom:1px solid var(--line);background:var(--code);color:var(--muted)}
+.banner b{color:var(--warn)}
+#log{flex:1;overflow-y:auto;padding:14px;display:grid;gap:12px;align-content:start;max-height:480px}
+.msg{max-width:85%;padding:9px 12px;border-radius:10px;white-space:pre-wrap;overflow-wrap:anywhere}
+.msg.user{justify-self:end;background:var(--accent);color:var(--accent-ink)}
+.msg.bot{justify-self:start;background:var(--code)}
+.msg.err{justify-self:start;background:transparent;border:1px solid var(--bad);color:var(--bad)}
+.hdrs{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.hdrs .pill{font-size:.68rem}
+form.send{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line)}
+form.send textarea{flex:1;resize:vertical;min-height:44px;max-height:140px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.hint{font-size:.82rem;color:var(--muted)}
+.steps{counter-reset:s;list-style:none;padding:0;margin:16px 0 0;display:grid;gap:14px}
+.steps>li{counter-increment:s;padding-left:44px;position:relative}
+.steps>li::before{content:counter(s);position:absolute;left:0;top:0;width:30px;height:30px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font:500 .9rem var(--mono)}
+footer{padding:32px 0 60px;color:var(--muted);font-size:.9rem}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <span class="pill ok">v1.1 · 328 tests · ruff limpio</span>
+  <h1 style="margin-top:12px">LLM Gateway</h1>
+  <p class="lead">Un gateway compatible con OpenAI, escrito en Python (FastAPI). Los clientes piden un <em>alias</em> (<code>fast</code>, <code>smart</code>, <code>judge</code>…), nunca un modelo; el gateway elige proveedor, reintenta, cambia de proveedor, cuida el presupuesto, cachea y mide todo. Esta guía explica cada fase construida (M0 a M9 y Stretch), todas las funciones, cómo probarlo con un chat y cómo ejecutarlo.</p>
+  <div class="stats">
+    <div class="stat"><b>10 + 1</b><span>fases (M0–M9, Stretch)</span></div>
+    <div class="stat"><b>328</b><span>tests pasando</span></div>
+    <div class="stat"><b>99,98 %</b><span>disponibilidad G10 (10 000 req)</span></div>
+    <div class="stat"><b>7,7×</b><span>menos p99 con hedging (G12)</span></div>
+    <div class="stat"><b>$0</b><span>gasto de desarrollo</span></div>
+  </div>
+</div></header>
+
+<nav class="toc" aria-label="Secciones"><div class="wrap">
+  <a href="#fases">Fases</a><a href="#funciones">Funciones</a><a href="#viaje">Viaje de un request</a><a href="#chat">Chat de prueba</a><a href="#ejecutar">Cómo ejecutarlo</a><a href="#api">API y headers</a><a href="#limites">Límites honestos</a>
+</div></nav>
+
+<main class="wrap">
+
+<section id="fases">
+  <h2>Las fases, una por una</h2>
+  <p>Cada fase deja código, tests y una puerta de calidad. Abre una para ver qué se construyó. Los números salen de <code>PLAN.md</code> y de <code>bench/results/</code>.</p>
+  <ol class="timeline">
+    <li><details><summary><span class="tag">M0</span><span class="ttl">Esqueleto</span><span class="pill ok">hecho</span><span class="gist">Repo, estructura de paquetes, herramientas y CI.</span></summary><div class="body">
+      <ul><li>Proyecto con <code>uv</code> y Python 3.12, FastAPI, <code>pydantic-settings</code> (variables <code>GW_*</code>).</li><li>Paquetes bajo <code>src/llm_gateway/</code> según el layout del plan; <code>GLOSSARY.md</code> fija un término por concepto.</li><li>Ruff (línea 110), pytest con asyncio automático, GitHub Actions, Makefile, <code>scripts/doctor.py</code> que revisa Docker, uv, RAM y puertos.</li></ul></div></details></li>
+    <li><details><summary><span class="tag">M1</span><span class="ttl">Contrato OpenAI y proveedor simulado</span><span class="pill ok">hecho</span><span class="gist"><code>/v1/chat/completions</code> en JSON y SSE contra un proveedor <code>mock</code>.</span></summary><div class="body">
+      <ul><li><code>GET /healthz</code>, <code>GET /v1/models</code> (lista alias), <code>POST /v1/chat/completions</code> con streaming SSE.</li><li>Errores en formato OpenAI, headers <code>X-Alias</code>, <code>X-Gateway-Provider</code>, <code>X-Request-Id</code>.</li><li>Alias → cadena de proveedores en <code>config/routes.yaml</code>, validada con Pydantic al arrancar.</li><li>Interfaz de chat incluida en <code>GET /</code>, contadores en <code>/stats</code>.</li><li>Test de contrato con el SDK oficial de OpenAI.</li></ul></div></details></li>
+    <li><details><summary><span class="tag">M2</span><span class="ttl">Proveedores reales, keys y cuotas</span><span class="pill ok">hecho</span><span class="gist">Ollama, Groq y Google AI Studio; una key por cliente.</span></summary><div class="body">
+      <ul><li><code>OpenAICompatProvider</code> para Ollama, Groq y Google. Un proveedor se registra solo si tiene key.</li><li><code>ProviderError</code> tipado: <em>transient</em>, <em>provider</em> o <em>client</em>. Decide si se reintenta, se salta al siguiente o se devuelve al cliente.</li><li>Keys por cliente (<code>Authorization: Bearer</code>), guardadas como SHA-256 en <code>config/clients.yaml</code> (ignorado por git); <code>scripts/new_key.py</code> las crea. <code>allowed_aliases</code> se aplica.</li><li>Cuotas salientes en memoria (rpm/tpm/rpd): el gateway cambia de proveedor antes de recibir un 429.</li></ul></div></details></li>
+    <li><details><summary><span class="tag">M3</span><span class="ttl">Resiliencia</span><span class="pill ok">hecho</span><span class="gist">El request baja por su cadena sin romperse.</span></summary><div class="body">
+      <ul><li><code>executor.py</code>: puertas por eslabón (breaker → cuota → bulkhead), timeouts por fase, un reintento con jitter completo solo en errores de conexión y 5xx, máximo 5 llamadas al proveedor.</li><li><code>breaker.py</code>: circuit breaker con 3 disparadores.</li><li><code>bulkhead.py</code>: concurrencia máxima por proveedor.</li><li><code>admission.py</code>: descarte de carga; <code>X-Priority</code> solo puede bajar la prioridad.</li><li><code>singleflight.py</code>: requests idénticos comparten una llamada.</li><li><code>lifecycle.py</code>: drenaje con SIGTERM y <code>/readyz</code>.</li><li>Regla de diseño: nunca se reintenta ni se cambia de proveedor después del primer token.</li></ul></div></details></li>
+    <li class="partial"><details><summary><span class="tag">M4</span><span class="ttl">Caché exacta y semántica</span><span class="pill warn">parcial</span><span class="gist">Caché exacta L1 lista; la semántica L2 corre en modo observación.</span></summary><div class="body">
+      <ul><li><code>cache/keys.py</code> (namespace, clave exacta, texto semántico, tags), <code>guards.py</code> (guardas léxicas), <code>embedder.py</code> (HashEmbedder offline; ONNX multilingual-e5-small opcional), <code>memory.py</code>, <code>service.py</code>.</li><li><code>config/cache.yaml</code> guarda umbrales por embedder; todos en <code>null</code> = solo observa, sin servir hits semánticos.</li><li><code>scripts/calibrate_cache.py</code> mide precisión y cobertura (G6).</li><li><strong>Pendiente:</strong> modelo verificador de zona gris, backend Redis, ~1000 pares etiquetados, medir G9 y G11.</li></ul></div></details></li>
+    <li><details><summary><span class="tag">M5</span><span class="ttl">Presupuesto y precios</span><span class="pill ok">hecho</span><span class="gist">Dinero en micro-dólares, reserva atómica, nunca gasto sorpresa.</span></summary><div class="body">
+      <ul><li><code>pricing/prices.py</code> y <code>config/prices.yaml</code>: USD por Mtok = µ$ por token, <code>Decimal</code>, redondeo hacia arriba.</li><li><code>budget/</code>: reserva el peor caso antes de llamar y liquida después. Tres topes: corrida, cliente por día, global por día. Backend en memoria o Redis con Lua atómico.</li><li>Si un eslabón de pago no cabe, se salta al siguiente con <code>X-Budget-Skipped</code>; si no queda nada, 402 <code>budget_exceeded</code>. Si el almacén cae, falla cerrado para proveedores de pago.</li><li><code>GET /admin/budget</code>. El presupuesto diario por cliente vale 0 por defecto (sin gasto de pago).</li></ul></div></details></li>
+    <li><details><summary><span class="tag">M6</span><span class="ttl">Streaming robusto</span><span class="pill ok">hecho</span><span class="gist">Keep-alive, cancelación y errores tipados en medio del stream.</span></summary><div class="body">
+      <ul><li>Comentario <code>: ping</code> tras <code>GW_STREAM_PING_S</code> segundos de silencio.</li><li>La lectura upstream corre en su propia tarea; si el cliente se va, se cancela hacia el proveedor.</li><li>Un stream que se cuelga termina con un chunk de error tipado y sin <code>[DONE]</code>, para que un error no parezca un final limpio.</li><li>Pruebas contra un servidor uvicorn real.</li></ul></div></details></li>
+    <li><details><summary><span class="tag">M7</span><span class="ttl">Salida estructurada y Anthropic</span><span class="pill ok">hecho</span><span class="gist"><code>response_format</code> validado y adaptador nativo de Claude Haiku 5.5.</span></summary><div class="body">
+      <ul><li><code>structured/validate.py</code>: valida JSON / JSON Schema, hace un reintento de reparación y, con stream, valida antes de enviar.</li><li><code>providers/anthropic.py</code>: API Messages nativa, <code>usage</code> normalizado, <code>cache_control</code> desde 512 tokens, <code>effort</code> acotado, parámetros no soportados descartados.</li><li>Se registra solo con la key <strong>y</strong> <code>GW_RUN_BUDGET_USD&gt;0</code>.</li><li>Headers <code>X-Params-Dropped</code>, <code>X-Effort</code>, <code>X-Structured-Repaired</code>.</li></ul></div></details></li>
+    <li><details><summary><span class="tag">M8</span><span class="ttl">Observabilidad y seguridad</span><span class="pill ok">hecho</span><span class="gist">Métricas, log JSON, trazas, key de admin, rate limit.</span></summary><div class="body">
+      <ul><li><code>/metrics</code> Prometheus (peticiones, TTFT, tokens, costo, caché, breaker, presupuesto, fallbacks…).</li><li>Un log JSON por request, nunca con prompts ni respuestas.</li><li>Trazas OpenTelemetry (<code>gateway.request</code> y <code>provider.attempt</code>, <code>traceparent</code>).</li><li>Key de admin (<code>GW_ADMIN_KEY_SHA256</code>) para <code>/stats</code>, <code>/metrics</code>, <code>/admin/*</code>.</li><li>Rate limit por cliente (<code>rpm</code>), límites de tamaño y forma por alias, 413 para cuerpos grandes.</li><li>Perfil Docker <code>obs</code>: Prometheus, Grafana con dashboard y Jaeger.</li></ul></div></details></li>
+    <li><details><summary><span class="tag">M9</span><span class="ttl">Benchmarks y publicación</span><span class="pill ok">v1.0</span><span class="gist">Arnés abierto, README con trazabilidad EARS.</span></summary><div class="body">
+      <ul><li><code>bench/</code>: G1 sobrecarga, G10 disponibilidad, G13 throughput; resultados en <code>bench/results/</code>; workflow nocturno.</li><li>README en inglés con tabla EARS (R01–R23, cada requisito con su test) y tabla de headers.</li><li><code>GW_CORS_ORIGINS</code>: CORS opcional para apps de navegador.</li><li>Resultados: G10 = 99,98 %; G13 ≈ 1 200 req/s; G1 <strong>no</strong> cumple el objetivo de &lt;5 ms p95 en Windows (+10,4 ms p95 sin caché).</li></ul></div></details></li>
+    <li class="partial"><details><summary><span class="tag">S</span><span class="ttl">Stretch</span><span class="pill warn">v1.1 · parcial</span><span class="gist">Hedging, EWMA, AIMD, visión, guardrails heurísticos, recarga en caliente.</span></summary><div class="body">
+      <ul><li><strong>Hedging (G12):</strong> si el primer eslabón calla más de <code>hedge_delay_s</code> (o 3× su EWMA de TTFT), se compite con el siguiente; gana el primero que responde y el perdedor se cancela. Medido: p99 1015 ms → 131 ms (7,7×) con 6,5 % de llamadas extra.</li><li><strong>Reordenar por EWMA:</strong> <code>reorder: ewma</code> pone primero el eslabón más rápido.</li><li><strong>AIMD:</strong> bulkhead adaptativo opcional (<code>adaptive: true</code>): +1 tras una ventana de éxitos, mitad con 429/timeout/TTFT lento.</li><li><strong>Visión:</strong> solo alias con <code>vision: true</code> aceptan imágenes; si no, 400 <code>images_not_supported</code>.</li><li><strong>Guardrails heurísticos:</strong> inyección de prompt (ES/EN) y PII por regex; modos <code>off|monitor|enforce</code>; <code>X-Untrusted-Content</code>.</li><li><strong>Recarga en caliente:</strong> <code>POST /admin/reload</code> o vigilante de archivos; todo o nada.</li><li><strong>No construido:</strong> Prompt Guard 2 (ONNX), redacción con Presidio, Langfuse.</li></ul></div></details></li>
+  </ol>
+</section>
+
+<section id="funciones">
+  <h2>Todas las funciones del gateway</h2>
+  <div class="grid">
+    <div class="card"><h3>Alias y cadenas</h3><p>El cliente pide <code>fast</code>, <code>smart</code>, <code>judge</code>, <code>vision</code>, <code>extract</code> o <code>smart_paid</code>. Cada alias es una lista ordenada de proveedores y modelos con su política. Toda cadena termina en un modelo local o en <code>mock</code>, así que el gateway responde sin internet.</p></div>
+    <div class="card"><h3>Compatibilidad OpenAI</h3><p>Funciona con el SDK oficial cambiando solo <code>base_url</code>. JSON y SSE, <code>usage</code>, <code>response_format</code>, <code>top_p</code>, <code>reasoning_effort</code>, <code>stream_options</code>.</p></div>
+    <div class="card"><h3>Proveedores</h3><p>Ollama (local), Groq y Google AI Studio (planes gratis), Anthropic nativo (de pago, apagado por defecto) y <code>mock</code> (solo dev/test).</p></div>
+    <div class="card"><h3>Fallback y reintentos</h3><p>Un reintento con jitter en errores de conexión y 5xx; después, siguiente eslabón. Nunca después del primer token. Hasta 5 llamadas por request.</p></div>
+    <div class="card"><h3>Circuit breaker y bulkhead</h3><p>Un proveedor enfermo se aparta solo y se prueba de nuevo más tarde. Cada proveedor tiene un tope de concurrencia (fijo, o adaptativo con AIMD).</p></div>
+    <div class="card"><h3>Cuotas salientes</h3><p>Buckets por proveedor para respetar los planes gratis y saltar antes del 429.</p></div>
+    <div class="card"><h3>Admisión y prioridades</h3><p>Descarta carga cuando hay demasiados requests; <code>X-Priority</code> solo baja la prioridad.</p></div>
+    <div class="card"><h3>Singleflight</h3><p>Requests idénticos cacheables comparten una sola llamada upstream.</p></div>
+    <div class="card"><h3>Caché exacta y semántica</h3><p>L1 exacta con namespaces, TTL y tags (<code>/admin/cache/invalidate</code>). L2 semántica con guardas léxicas, en modo observación hasta calibrar umbrales.</p></div>
+    <div class="card"><h3>Presupuesto atómico</h3><p>Reserva el peor caso en micro-dólares y liquida; tres topes; falla cerrado para proveedores de pago.</p></div>
+    <div class="card"><h3>Streaming robusto</h3><p>Pings, cancelación hacia el proveedor, error tipado en medio del stream, sin <code>[DONE]</code> al abortar.</p></div>
+    <div class="card"><h3>Salida estructurada</h3><p>Valida JSON / Schema, repara una vez, y avisa con <code>X-Structured-Repaired</code>.</p></div>
+    <div class="card"><h3>Hedging y EWMA</h3><p>Compite con el siguiente eslabón cuando el primero tarda; ordena por latencia medida.</p></div>
+    <div class="card"><h3>Visión</h3><p>Imágenes solo en alias con <code>vision: true</code>; costo fijo de 800 tokens por imagen en la estimación.</p></div>
+    <div class="card"><h3>Guardrails</h3><p>Tamaño y forma (<code>max_messages</code>, <code>max_images</code>, 413) y heurísticas de inyección/PII con <code>X-Guardrail-Flags</code>.</p></div>
+    <div class="card"><h3>Seguridad</h3><p>Keys por cliente con hash, key de admin, rate limit por cliente (memoria o Redis), CORS opcional.</p></div>
+    <div class="card"><h3>Observabilidad</h3><p><code>/metrics</code>, <code>/stats</code>, log JSON sin prompts, trazas OTel, Grafana y Jaeger.</p></div>
+    <div class="card"><h3>Operación</h3><p><code>/healthz</code>, <code>/readyz</code>, drenaje con SIGTERM, recarga en caliente, UI de chat en <code>/</code>.</p></div>
+  </div>
+</section>
+
+<section id="viaje">
+  <h2>El viaje de un request</h2>
+  <p>De izquierda a derecha, en este orden. Cada caja puede responder por sí sola y cortar el viaje.</p>
+  <div class="flow" aria-label="Pasos del request">
+    <span>auth</span><i>→</i><span>rate limit</span><i>→</i><span>tamaño/forma</span><i>→</i><span>visión</span><i>→</i><span>guardrail</span><i>→</i><span>caché exacta</span><i>→</i><span>singleflight</span><i>→</i><span>admisión</span><i>→</i><span>breaker</span><i>→</i><span>cuota</span><i>→</i><span>bulkhead</span><i>→</i><span>presupuesto</span><i>→</i><span>proveedor</span><i>→</i><span>validación</span><i>→</i><span>respuesta + X-*</span>
+  </div>
+</section>
+
+<section id="chat">
+  <h2>Chat de prueba</h2>
+  <p>Dos modos. <strong>Demo simulado</strong> corre aquí mismo y reproduce cómo el gateway elige proveedor, cae al siguiente, usa la caché y devuelve headers. <strong>Gateway real</strong> intenta llamar a tu servidor.</p>
+  <p class="hint">Importante: esta página corre en un marco aislado que bloquea las llamadas de red a otros sitios, así que el modo real casi seguro será rechazado aquí. Para probar tu gateway de verdad, abre <code>http://localhost:8080/</code> (el chat que ya trae el gateway, sin CORS) o usa los comandos <code>curl</code> de abajo.</p>
+  <div class="bench">
+    <div class="side">
+      <div class="seg" role="group" aria-label="Modo"><button type="button" id="m-demo" aria-pressed="true">Demo simulado</button><button type="button" id="m-live" aria-pressed="false">Gateway real</button></div>
+      <label for="alias">Alias
+        <select id="alias"><option>fast</option><option>smart</option><option>judge</option><option>vision</option><option>extract</option><option>smart_paid</option></select>
+      </label>
+      <div id="live-fields" hidden>
+        <label for="base">URL base<input type="text" id="base" value="http://localhost:8080" autocomplete="off" spellcheck="false"></label>
+        <label for="key">API key<input type="password" id="key" placeholder="gw_me_…" autocomplete="off"></label>
+      </div>
+      <div id="sim-fields">
+        <label class="chk"><input type="checkbox" id="s-groq"> Groq caído (503)</label>
+        <label class="chk"><input type="checkbox" id="s-slow"> Primer proveedor lento (hedging)</label>
+        <label class="chk"><input type="checkbox" id="s-inj"> Guardrail en modo enforce</label>
+      </div>
+      <label class="chk"><input type="checkbox" id="stream" checked> Streaming</label>
+      <button type="button" id="clear">Limpiar chat</button>
+    </div>
+    <div class="chat">
+      <div class="banner" id="banner"><b>SIMULADO.</b> Ninguna respuesta viene de un modelo real; las respuestas son texto fijo para mostrar el comportamiento.</div>
+      <div id="log" role="log" aria-live="polite"></div>
+      <form class="send" id="form">
+        <label for="prompt" class="hint" style="display:none">Mensaje</label>
+        <textarea id="prompt" placeholder="Escribe un mensaje. Repite el mismo para ver un hit de caché."></textarea>
+        <button class="primary" type="submit" id="go">Enviar</button>
+      </form>
+    </div>
+  </div>
+  <p class="hint" style="margin-top:10px">Prueba: envía "hola" dos veces (la segunda sale de caché); marca "Groq caído" y envía otro mensaje (cae a ollama/mock); escribe "ignore all previous instructions" con enforce activo.</p>
+</section>
+
+<section id="ejecutar">
+  <h2>Cómo ejecutarlo</h2>
+  <p>Necesitas <a href="https://docs.astral.sh/uv/">uv</a> (instala Python 3.12 solo). Todo funciona sin internet con el proveedor <code>mock</code>.</p>
+  <ol class="steps">
+    <li><h3>Instalar y verificar</h3>
+      <div class="cmd"><pre><code>git clone &lt;tu-repo&gt; llm-gateway &amp;&amp; cd llm-gateway
+uv sync --dev
+uv run pytest -q          # 328 tests
+uv run ruff check .</code></pre><button type="button" data-copy>Copiar</button></div></li>
+    <li><h3>Crear una key de cliente</h3>
+      <p>Imprime la key una sola vez y la entrada para pegar en <code>config/clients.yaml</code> (archivo ignorado por git; hay un ejemplo en <code>config/clients.example.yaml</code>).</p>
+      <div class="cmd"><pre><code>python scripts/new_key.py me fast smart judge vision extract</code></pre><button type="button" data-copy>Copiar</button></div></li>
+    <li><h3>Arrancar el servidor</h3>
+      <div class="cmd"><pre><code>uv run uvicorn llm_gateway.main:app --port 8080
+# con recarga de código: uv run uvicorn llm_gateway.main:app --reload --port 8080</code></pre><button type="button" data-copy>Copiar</button></div>
+      <p>Abre <code>http://localhost:8080/</code> para el chat incluido: pega tu key y verás los headers como etiquetas.</p></li>
+    <li><h3>Probar con curl o con el SDK de OpenAI</h3>
+      <div class="cmd"><pre><code>curl -s localhost:8080/v1/chat/completions \
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{"model":"fast","messages":[{"role":"user","content":"hola"}]}' -i</code></pre><button type="button" data-copy>Copiar</button></div>
+      <div class="cmd"><pre><code>from openai import OpenAI
+client = OpenAI(base_url="http://localhost:8080/v1", api_key=KEY)
+print(client.chat.completions.create(model="fast",
+      messages=[{"role": "user", "content": "hola"}]).choices[0].message.content)</code></pre><button type="button" data-copy>Copiar</button></div></li>
+    <li><h3>Activar proveedores reales (opcional)</h3>
+      <p>Copia <code>.env.example</code> a <code>.env</code> y rellena lo que tengas. Sin key, el proveedor simplemente no se registra.</p>
+      <div class="tablewrap"><table><thead><tr><th>Variable</th><th>Para qué sirve</th></tr></thead><tbody>
+        <tr><td>GW_ENV</td><td><code>dev</code> (por defecto), <code>test</code>, <code>prod</code>. <code>mock</code> existe solo en dev/test.</td></tr>
+        <tr><td>GW_GROQ_API_KEY</td><td>Activa Groq (plan gratis).</td></tr>
+        <tr><td>GW_GOOGLE_API_KEY</td><td>Activa Google AI Studio (Gemma, plan gratis).</td></tr>
+        <tr><td>GW_OLLAMA_BASE_URL</td><td>Ollama local, por ejemplo <code>http://localhost:11434/v1</code>.</td></tr>
+        <tr><td>GW_ANTHROPIC_API_KEY</td><td>Claude Haiku 5.5. Solo funciona junto a <code>GW_RUN_BUDGET_USD&gt;0</code>.</td></tr>
+        <tr><td>GW_RUN_BUDGET_USD</td><td>0 = proveedores de pago apagados.</td></tr>
+        <tr><td>GW_CORS_ORIGINS</td><td>Orígenes de navegador permitidos (o <code>*</code>).</td></tr>
+        <tr><td>GW_CACHE_BACKEND / GW_EMBEDDER</td><td><code>memory|off</code>; <code>e5-small|hash|off</code>.</td></tr>
+        <tr><td>GW_GUARDRAILS_MODE</td><td><code>off</code>, <code>monitor</code> (por defecto) o <code>enforce</code>.</td></tr>
+        <tr><td>GW_RELOAD_INTERVAL_S</td><td>&gt;0 recarga rutas/clientes/precios al cambiar los archivos.</td></tr>
+        <tr><td>GW_ADMIN_KEY_SHA256</td><td>Hash de la key de admin (<code>python scripts/new_key.py --admin</code>).</td></tr>
+        <tr><td>GW_STREAM_PING_S</td><td>Segundos de silencio antes del <code>: ping</code>.</td></tr>
+      </tbody></table></div></li>
+    <li><h3>Stack completo con Docker</h3>
+      <div class="cmd"><pre><code>make up        # gateway + Redis
+make up-obs    # + Prometheus, Grafana (dashboard listo), Jaeger</code></pre><button type="button" data-copy>Copiar</button></div>
+      <p>Sin <code>make</code> en Windows, usa los comandos <code>docker compose</code> del Makefile.</p></li>
+    <li><h3>Benchmarks</h3>
+      <div class="cmd"><pre><code>uv run python -m bench.availability   # G10, ~99,98 %
+uv run python -m bench.hedging        # G12, p99 con y sin hedging
+uv run python -m bench.overhead       # G1, lento
+uv run python -m bench.throughput     # G13, lento</code></pre><button type="button" data-copy>Copiar</button></div></li>
+    <li><h3>Recargar configuración sin reiniciar</h3>
+      <div class="cmd"><pre><code>curl -X POST localhost:8080/admin/reload -H "Authorization: Bearer $ADMIN_KEY"</code></pre><button type="button" data-copy>Copiar</button></div>
+      <p>Si el archivo nuevo es inválido, responde 400 y sigue sirviendo la configuración anterior.</p></li>
+  </ol>
+</section>
+
+<section id="api">
+  <h2>API y headers</h2>
+  <div class="tablewrap"><table><thead><tr><th>Endpoint</th><th>Qué hace</th></tr></thead><tbody>
+    <tr><td>POST /v1/chat/completions</td><td>Chat compatible con OpenAI, JSON o SSE.</td></tr>
+    <tr><td>GET /v1/models</td><td>Lista los alias.</td></tr>
+    <tr><td>GET /healthz · /readyz</td><td>Vivo · listo (falla durante el drenaje).</td></tr>
+    <tr><td>GET /</td><td>Chat de prueba incluido.</td></tr>
+    <tr><td>GET /stats · /metrics</td><td>Contadores · Prometheus (key de admin).</td></tr>
+    <tr><td>GET /admin/budget</td><td>Gasto y topes.</td></tr>
+    <tr><td>POST /admin/cache/invalidate</td><td>Invalida por tags.</td></tr>
+    <tr><td>POST /admin/reload</td><td>Recarga rutas, clientes y precios.</td></tr>
+  </tbody></table></div>
+  <h3 style="margin-top:20px">Headers de respuesta</h3>
+  <div class="tablewrap"><table><thead><tr><th>Header</th><th>Significado</th></tr></thead><tbody>
+    <tr><td>X-Request-Id</td><td>Id del request.</td></tr>
+    <tr><td>X-Alias</td><td>Alias pedido.</td></tr>
+    <tr><td>X-Gateway-Provider</td><td><code>proveedor:modelo</code> que respondió.</td></tr>
+    <tr><td>X-Gateway-Fallback-Depth</td><td>Cuántos eslabones se saltaron.</td></tr>
+    <tr><td>X-Cache-Layer · X-Cache-Similarity</td><td>Capa de caché del hit y similitud.</td></tr>
+    <tr><td>X-Gateway-Singleflight</td><td>El request compartió otra llamada.</td></tr>
+    <tr><td>X-Max-Tokens-Clamped</td><td><code>max_tokens</code> recortado al tope del alias.</td></tr>
+    <tr><td>X-Budget-Skipped</td><td>Eslabón de pago omitido por presupuesto.</td></tr>
+    <tr><td>X-Params-Dropped · X-Effort</td><td>Parámetros descartados · esfuerzo aplicado.</td></tr>
+    <tr><td>X-Structured-Repaired</td><td>La salida se reparó una vez.</td></tr>
+    <tr><td>X-Guardrail-Flags</td><td>Hallazgos del guardrail (<code>injection</code>, <code>pii:email</code>…).</td></tr>
+  </tbody></table></div>
+  <p class="hint" style="margin-top:10px">Headers de petición: <code>Authorization</code>, <code>X-Priority</code>, <code>X-Cache-Scope</code>, <code>X-Cache-Tags</code>, <code>X-Prompt-Cache</code>, <code>X-Untrusted-Content</code>, <code>X-Request-ID</code>, <code>traceparent</code>.</p>
+</section>
+
+<section id="limites">
+  <h2>Límites honestos</h2>
+  <ul>
+    <li>El objetivo de sobrecarga G1 (&lt;5 ms p95) no se cumplió en la máquina Windows de prueba.</li>
+    <li>Los umbrales de la caché semántica no están calibrados; hoy solo observa. Faltan el verificador de zona gris, el backend Redis y ~1000 pares etiquetados.</li>
+    <li>G9, G11 y el caos con Toxiproxy no se han medido. No hay Docker en la máquina de desarrollo, así que el perfil <code>obs</code> y Redis no se probaron aquí.</li>
+    <li>El adaptador de Anthropic se probó con fixtures, no contra streams reales.</li>
+    <li>El guardrail de inyección/PII es un sustituto por regex; no mide recall ni falsos positivos (G14).</li>
+    <li>Prompt Guard 2, Presidio y Langfuse no se construyeron.</li>
+    <li>El hedging, el reorden por EWMA y AIMD son opt-in y solo se probaron en proceso.</li>
+  </ul>
+</section>
+
+</main>
+<footer><div class="wrap">Basado en <code>PLAN.md</code>, <code>README.md</code> y <code>bench/results/</code> del repositorio. Versión v1.1.</div></footer>
+
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id)};
+  var log=$('log'), mode='demo';
+
+  // copy buttons
+  document.querySelectorAll('[data-copy]').forEach(function(b){
+    b.addEventListener('click',function(){
+      var t=b.parentNode.querySelector('code').innerText;
+      try{navigator.clipboard.writeText(t).then(function(){b.textContent='Copiado';setTimeout(function(){b.textContent='Copiar'},1200)},function(){b.textContent='Selecciona y copia'})}
+      catch(e){b.textContent='Selecciona y copia'}
+    });
+  });
+
+  function setMode(m){
+    mode=m;
+    $('m-demo').setAttribute('aria-pressed',m==='demo');
+    $('m-live').setAttribute('aria-pressed',m==='live');
+    $('live-fields').hidden=m!=='live';
+    $('sim-fields').hidden=m!=='demo';
+    $('banner').innerHTML = m==='demo'
+      ? '<b>SIMULADO.</b> Ninguna respuesta viene de un modelo real; las respuestas son texto fijo para mostrar el comportamiento.'
+      : '<b>REAL.</b> Llama a tu gateway. Si esta página no puede salir a la red, verás el error aquí; usa <code>http://localhost:8080/</code> en su lugar.';
+  }
+  $('m-demo').onclick=function(){setMode('demo')};
+  $('m-live').onclick=function(){setMode('live')};
+  $('clear').onclick=function(){log.innerHTML='';cache={};};
+
+  function add(cls,text){var d=document.createElement('div');d.className='msg '+cls;d.textContent=text;log.appendChild(d);log.scrollTop=log.scrollHeight;return d}
+  function pills(el,h){
+    var w=document.createElement('div');w.className='hdrs';
+    Object.keys(h).forEach(function(k){var p=document.createElement('span');p.className='pill';p.textContent=k+': '+h[k];w.appendChild(p)});
+    el.appendChild(w);
+  }
+  function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
+
+  // ---- simulated gateway ----
+  var chains={
+    fast:[['groq','llama-3.1-8b-instant'],['ollama','qwen3:1.7b'],['mock','mock-fast']],
+    smart:[['google','gemma-4-31b-it'],['groq','llama-3.3-70b-versatile'],['ollama','qwen3:1.7b']],
+    judge:[['ollama','gemma3:4b'],['mock','mock-judge']],
+    vision:[['google','gemma-4-31b-it'],['mock','mock-vision']],
+    extract:[['google','gemma-4-26b-a4b-it'],['groq','llama-3.3-70b-versatile'],['ollama','qwen3:1.7b']],
+    smart_paid:[['anthropic','claude-haiku-5-5'],['groq','llama-3.3-70b-versatile'],['ollama','qwen3:1.7b']]
+  };
+  var cache={}, n=0;
+  var INJ=/(ignore|disregard|forget)\b.{0,30}\b(previous|prior|above|all)\b.{0,20}\b(instructions?|prompts?)|ignora.{0,30}instrucciones/i;
+  function rid(){n++;return 'req_'+Math.random().toString(16).slice(2,10)}
+
+  async function simulate(alias,text){
+    var id=rid(), h={'X-Request-Id':id,'X-Alias':alias};
+    if(INJ.test(text)){
+      if($('s-inj').checked) return {err:'400 guardrail_blocked: The request looks like a prompt-injection attempt.',h:h};
+      h['X-Guardrail-Flags']='injection';
+    }
+    var key=alias+'|'+text.trim().toLowerCase();
+    if(cache[key]){h['X-Cache-Layer']='exact';h['X-Gateway-Provider']=cache[key].p;return {text:cache[key].t,h:h}}
+    var chain=chains[alias].slice(), depth=0, hedged=false;
+    if(alias==='smart_paid'){h['X-Budget-Skipped']='anthropic'; chain.shift(); depth=1;}
+    var p=chain[0];
+    if($('s-groq').checked && p[0]==='groq'){chain.shift();depth++;p=chain[0]}
+    if($('s-slow').checked && chain.length>1){
+      h['X-Hedge']='launched, second link won';depth=Math.max(depth,0);p=chain[1];
+    }
+    h['X-Gateway-Provider']=p[0]+':'+p[1];
+    h['X-Gateway-Fallback-Depth']=String(depth);
+    var out='[respuesta simulada de '+p[0]+':'+p[1]+'] Recibí: "'+text.trim().slice(0,120)+'". En el gateway real, aquí iría la respuesta del modelo.';
+    cache[key]={t:out,p:h['X-Gateway-Provider']};
+    return {text:out,h:h};
+  }
+
+  async function runDemo(alias,text){
+    var r=await simulate(alias,text);
+    if(r.err){var e=add('err',r.err);pills(e,r.h);return}
+    var el=add('bot','');
+    if($('stream').checked){for(var i=0;i<r.text.length;i+=4){el.textContent=r.text.slice(0,i+4);log.scrollTop=log.scrollHeight;await sleep(12)}}
+    el.textContent=r.text;pills(el,r.h);
+  }
+
+  // ---- live gateway ----
+  async function runLive(alias,text){
+    var base=$('base').value.replace(/\/+$/,''), key=$('key').value.trim();
+    var el=add('bot','');
+    try{
+      var res=await fetch(base+'/v1/chat/completions',{method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+        body:JSON.stringify({model:alias,stream:$('stream').checked,messages:[{role:'user',content:text}]})});
+      var h={};['x-gateway-provider','x-gateway-fallback-depth','x-cache-layer','x-budget-skipped','x-guardrail-flags','x-request-id'].forEach(function(k){var v=res.headers.get(k);if(v)h[k]=v});
+      if(!res.ok){var j=await res.json().catch(function(){return {}});el.className='msg err';el.textContent=res.status+' '+((j.error&&j.error.code)||'')+': '+((j.error&&j.error.message)||res.statusText);pills(el,h);return}
+      if($('stream').checked){
+        var rd=res.body.getReader(), dec=new TextDecoder(), buf='', acc='';
+        while(true){var s=await rd.read();if(s.done)break;buf+=dec.decode(s.value,{stream:true});
+          var parts=buf.split('\n\n');buf=parts.pop();
+          parts.forEach(function(p){p.split('\n').forEach(function(l){if(l.indexOf('data: ')!==0)return;var d=l.slice(6);if(d==='[DONE]')return;
+            try{var c=JSON.parse(d);if(c.error){acc+='\n['+c.error.code+']';}else{var dl=c.choices&&c.choices[0]&&c.choices[0].delta;if(dl&&dl.content)acc+=dl.content}}catch(e){}})});
+          el.textContent=acc;log.scrollTop=log.scrollHeight}
+      }else{var j2=await res.json();el.textContent=j2.choices[0].message.content}
+      pills(el,h);
+    }catch(e){
+      el.className='msg err';
+      el.textContent='No se pudo llegar al gateway ('+e.message+'). Esta página corre en un marco aislado que bloquea llamadas a otros sitios, o falta GW_CORS_ORIGINS. Abre http://localhost:8080/ directamente, o usa curl.';
+    }
+  }
+
+  $('form').addEventListener('submit',async function(ev){
+    ev.preventDefault();
+    var text=$('prompt').value.trim(); if(!text)return;
+    var alias=$('alias').value; $('prompt').value=''; $('go').disabled=true;
+    add('user',text);
+    try{ if(mode==='demo') await runDemo(alias,text); else await runLive(alias,text) } finally { $('go').disabled=false; $('prompt').focus() }
+  });
+  $('prompt').addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('form').requestSubmit()}});
+
+  add('bot','Hola. Soy una demo simulada del gateway. Elige un alias, escribe algo y mira los headers que devolvería.');
+})();
+</script>
+</body>
+</html>

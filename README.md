@@ -6,7 +6,7 @@
 > cancellation, and Prometheus/OpenTelemetry observability.
 > Successor of my Go [llm-edge-gateway](https://github.com/Leito2/llm-edge-gateway) — every capability kept, its limits fixed.
 
-**Status:** `v1.0` — milestones M0–M9 done, 295 tests. M4 (semantic cache) is complete except the items listed under
+**Status:** `v1.1` — milestones M0–M9 done, 328 tests. M4 (semantic cache) is complete except the items listed under
 [Limitations](#part-vi--reflection): calibrated thresholds, a gray-zone verifier model and the Redis cache backend.
 [`PLAN.md`](PLAN.md) holds the full design (Spanish); [`GLOSSARY.md`](GLOSSARY.md) fixes the vocabulary.
 
@@ -208,7 +208,7 @@ Ollama optional for local models. Everything below runs offline against the buil
 
 ```bash
 uv sync --dev                                   # install
-uv run pytest -q                                # 295 tests
+uv run pytest -q                                # 328 tests
 python scripts/new_key.py me fast smart         # prints a key ONCE + the clients.yaml entry to paste
 ```
 
