@@ -7,7 +7,7 @@
 > Successor of my Go [llm-edge-gateway](https://github.com/Leito2/llm-edge-gateway) — every capability kept, its limits fixed.
 
 **Status:** `v1.1` — milestones M0–M9 done, 329 tests. M4 (semantic cache) is complete except the items listed under
-[Limitations](#part-vi--reflection): calibrated thresholds, a gray-zone verifier model and the Redis cache backend.
+[Limitations](#part-vi--reflection): calibrated thresholds and a gray-zone verifier model.
 [`PLAN.md`](PLAN.md) holds the full design (Spanish); [`GLOSSARY.md`](GLOSSARY.md) fixes the vocabulary.
 
 ## TL;DR — Results at a Glance
@@ -233,7 +233,7 @@ unchanged: `OpenAI(base_url="http://localhost:8080/v1", api_key=KEY)`.
 | `GROQ_API_KEY`, `GOOGLE_API_KEY`, `OLLAMA_BASE_URL` | Enable those providers (a provider with no key is simply not registered) |
 | `ANTHROPIC_API_KEY` + `RUN_BUDGET_USD` | Both needed to enable paid Anthropic; `RUN_BUDGET_USD=0` disables paid providers |
 | `GLOBAL_DAY_BUDGET_USD`, `BUDGET_BACKEND` | Global day cap; `memory` (default) or `redis` |
-| `CACHE_BACKEND`, `EMBEDDER` | `memory`/`off`; `e5-small` (needs `uv sync --extra semantic` + model files), `hash`, `off` |
+| `CACHE_BACKEND`, `EMBEDDER` | `memory`/`redis`/`off`; `e5-small` (needs `uv sync --extra semantic` + model files), `hash`, `off` |
 | `ADMIN_KEY_SHA256` | Hash of the admin key (`python scripts/new_key.py --admin`) guarding `/stats`, `/metrics`, `/admin/*` |
 | `CORS_ORIGINS` | Comma-separated origins (or `*`) allowed to call from a browser app on another origin |
 | `OTEL_ENDPOINT` | OTLP/HTTP traces (`uv sync --extra otel`) |
@@ -253,7 +253,7 @@ made the rest mechanical; every EARS requirement has a test, and the real-uvicor
 
 **Limitations (honest list).**
 - Semantic thresholds are **uncalibrated**: the cache runs in observation mode until ~1,000 labeled pairs exist and the
-  precision/coverage curves are measured for several embedders. The gray-zone verifier model and the Redis cache backend are not built.
+  precision/coverage curves are measured for several embedders. The gray-zone verifier model is not built. The Redis cache backend (`GW_CACHE_BACKEND=redis`) is tested only on fakeredis, ranks vectors in Python instead of using the Redis 8 Query Engine (HNSW), and has not run against a real Redis.
 - G11 uses synthetic Zipf traffic, so the PLAN's 30–40 % claim is untested on real traffic; G9's semantic threshold was set
   just for the run (G6 is open). The Toxiproxy chaos suite is not measured yet.
 - The Anthropic adapter is tested against fixtures written from the documented API, not against real streams.

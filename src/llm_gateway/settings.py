@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     max_in_flight: int = 64  # global load-shedding limit (PLAN §4.7)
     stream_ping_s: float = 10.0  # SSE keep-alive comment after this much silence (R10)
     drain_timeout_s: float = 8.0  # SIGTERM: time active streams get to finish (PLAN §4.9)
-    cache_backend: Literal["memory", "off"] = "memory"  # `redis` joins once verified on Redis 8
+    cache_backend: Literal["memory", "redis", "off"] = "memory"  # redis: shared, survives restarts
     embedder: str = "e5-small"  # `hash` (offline stand-in), a model name, or `off`
     models_dir: Path = Path("models")  # ONNX model files, one folder per embedder (git-ignored)
     redis_url: str = "redis://localhost:6379/0"

@@ -92,11 +92,9 @@ def create_app(settings: Settings | None = None, tracer_provider=None) -> FastAP
     )
     cache_config = load_cache_config(settings.cache_file)
     embedder = None if settings.embedder == "off" else build_embedder(settings.embedder, settings.models_dir)
-    cache = (
-        None
-        if settings.cache_backend == "off"
-        else CacheService(MemoryBackend(cache_config.max_entries), cache_config, embedder)
-    )
+    cache = None
+    if settings.cache_backend != "off":
+        cache = CacheService(_build_cache_backend(settings, cache_config), cache_config, embedder)
     tracer = build_tracer(settings.otel_endpoint, tracer_provider)
     bulkhead = Bulkhead(
         {name: spec.concurrency for name, spec in provider_config.providers.items() if spec.concurrency},
@@ -141,6 +139,16 @@ def create_app(settings: Settings | None = None, tracer_provider=None) -> FastAP
     for module in (health, models, chat, embeddings, admin, metrics_api, ui):
         app.include_router(module.router)
     return app
+
+
+def _build_cache_backend(settings: Settings, cache_config):
+    if settings.cache_backend == "redis":
+        import redis.asyncio as aioredis
+
+        from llm_gateway.cache.redis_backend import RedisBackend
+
+        return RedisBackend(aioredis.from_url(settings.redis_url))
+    return MemoryBackend(cache_config.max_entries)
 
 
 def _build_ratelimit(settings: Settings) -> RateLimiter:
