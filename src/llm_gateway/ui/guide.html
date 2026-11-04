@@ -108,12 +108,12 @@ footer{padding:32px 0 60px;color:var(--muted);font-size:.9rem}
 </head>
 <body>
 <header class="top"><div class="wrap">
-  <span class="pill ok">v1.1 · 328 tests · ruff limpio</span>
+  <span class="pill ok">v1.1 · 364 tests · ruff limpio</span>
   <h1 style="margin-top:12px">LLM Gateway</h1>
   <p class="lead">Un gateway compatible con OpenAI, escrito en Python (FastAPI). Los clientes piden un <em>alias</em> (<code>fast</code>, <code>smart</code>, <code>judge</code>…), nunca un modelo; el gateway elige proveedor, reintenta, cambia de proveedor, cuida el presupuesto, cachea y mide todo. Esta guía explica cada fase construida (M0 a M9 y Stretch), todas las funciones, cómo probarlo con un chat y cómo ejecutarlo.</p>
   <div class="stats">
     <div class="stat"><b>10 + 1</b><span>fases (M0–M9, Stretch)</span></div>
-    <div class="stat"><b>328</b><span>tests pasando</span></div>
+    <div class="stat"><b>364</b><span>tests pasando</span></div>
     <div class="stat"><b>99,98 %</b><span>disponibilidad G10 (10 000 req)</span></div>
     <div class="stat"><b>7,7×</b><span>menos p99 con hedging (G12)</span></div>
     <div class="stat"><b>$0</b><span>gasto de desarrollo</span></div>
@@ -139,7 +139,7 @@ footer{padding:32px 0 60px;color:var(--muted);font-size:.9rem}
     <li><details><summary><span class="tag">M3</span><span class="ttl">Resiliencia</span><span class="pill ok">hecho</span><span class="gist">El request baja por su cadena sin romperse.</span></summary><div class="body">
       <ul><li><code>executor.py</code>: puertas por eslabón (breaker → cuota → bulkhead), timeouts por fase, un reintento con jitter completo solo en errores de conexión y 5xx, máximo 5 llamadas al proveedor.</li><li><code>breaker.py</code>: circuit breaker con 3 disparadores.</li><li><code>bulkhead.py</code>: concurrencia máxima por proveedor.</li><li><code>admission.py</code>: descarte de carga; <code>X-Priority</code> solo puede bajar la prioridad.</li><li><code>singleflight.py</code>: requests idénticos comparten una llamada.</li><li><code>lifecycle.py</code>: drenaje con SIGTERM y <code>/readyz</code>.</li><li>Regla de diseño: nunca se reintenta ni se cambia de proveedor después del primer token.</li></ul></div></details></li>
     <li class="partial"><details><summary><span class="tag">M4</span><span class="ttl">Caché exacta y semántica</span><span class="pill warn">parcial</span><span class="gist">Caché exacta L1 lista; la semántica L2 corre en modo observación.</span></summary><div class="body">
-      <ul><li><code>cache/keys.py</code> (namespace, clave exacta, texto semántico, tags), <code>guards.py</code> (guardas léxicas), <code>embedder.py</code> (HashEmbedder offline; ONNX multilingual-e5-small opcional), <code>memory.py</code>, <code>service.py</code>.</li><li><code>config/cache.yaml</code> guarda umbrales por embedder; todos en <code>null</code> = solo observa, sin servir hits semánticos.</li><li><code>scripts/calibrate_cache.py</code> mide precisión y cobertura (G6).</li><li><strong>Pendiente:</strong> modelo verificador de zona gris, backend Redis, ~1000 pares etiquetados, medir G9 y G11.</li></ul></div></details></li>
+      <ul><li><code>cache/keys.py</code> (namespace, clave exacta, texto semántico, tags), <code>guards.py</code> (guardas léxicas), <code>embedder.py</code> (HashEmbedder offline; ONNX multilingual-e5-small opcional), <code>memory.py</code>, <code>service.py</code>.</li><li><code>config/cache.yaml</code> guarda umbrales por embedder; todos en <code>null</code> = solo observa, sin servir hits semánticos.</li><li><code>scripts/calibrate_cache.py</code> mide precisión y cobertura (G6).</li><li><code>cache/redis_backend.py</code> (<code>GW_CACHE_BACKEND=redis</code>): entradas con TTL, vectores por namespace y tags; un fallo de Redis es un miss, no un error. Probado solo con fakeredis y sin HNSW (el ranking de vectores se hace en Python).</li><li><strong>Pendiente:</strong> modelo verificador de zona gris, ~1000 pares etiquetados para calibrar G6, y probar el backend contra un Redis real.</li></ul></div></details></li>
     <li><details><summary><span class="tag">M5</span><span class="ttl">Presupuesto y precios</span><span class="pill ok">hecho</span><span class="gist">Dinero en micro-dólares, reserva atómica, nunca gasto sorpresa.</span></summary><div class="body">
       <ul><li><code>pricing/prices.py</code> y <code>config/prices.yaml</code>: USD por Mtok = µ$ por token, <code>Decimal</code>, redondeo hacia arriba.</li><li><code>budget/</code>: reserva el peor caso antes de llamar y liquida después. Tres topes: corrida, cliente por día, global por día. Backend en memoria o Redis con Lua atómico.</li><li>Si un eslabón de pago no cabe, se salta al siguiente con <code>X-Budget-Skipped</code>; si no queda nada, 402 <code>budget_exceeded</code>. Si el almacén cae, falla cerrado para proveedores de pago.</li><li><code>GET /admin/budget</code>. El presupuesto diario por cliente vale 0 por defecto (sin gasto de pago).</li></ul></div></details></li>
     <li><details><summary><span class="tag">M6</span><span class="ttl">Streaming robusto</span><span class="pill ok">hecho</span><span class="gist">Keep-alive, cancelación y errores tipados en medio del stream.</span></summary><div class="body">
@@ -151,7 +151,7 @@ footer{padding:32px 0 60px;color:var(--muted);font-size:.9rem}
     <li><details><summary><span class="tag">M9</span><span class="ttl">Benchmarks y publicación</span><span class="pill ok">v1.0</span><span class="gist">Arnés abierto, README con trazabilidad EARS.</span></summary><div class="body">
       <ul><li><code>bench/</code>: G1 sobrecarga, G10 disponibilidad, G13 throughput; resultados en <code>bench/results/</code>; workflow nocturno.</li><li>README en inglés con tabla EARS (R01–R23, cada requisito con su test) y tabla de headers.</li><li><code>GW_CORS_ORIGINS</code>: CORS opcional para apps de navegador.</li><li>Resultados: G10 = 99,98 %; G13 ≈ 1 200 req/s; G1 <strong>no</strong> cumple el objetivo de &lt;5 ms p95 en Windows (+10,4 ms p95 sin caché).</li></ul></div></details></li>
     <li class="partial"><details><summary><span class="tag">S</span><span class="ttl">Stretch</span><span class="pill warn">v1.1 · parcial</span><span class="gist">Hedging, EWMA, AIMD, visión, guardrails heurísticos, recarga en caliente.</span></summary><div class="body">
-      <ul><li><strong>Hedging (G12):</strong> si el primer eslabón calla más de <code>hedge_delay_s</code> (o 3× su EWMA de TTFT), se compite con el siguiente; gana el primero que responde y el perdedor se cancela. Medido: p99 1015 ms → 131 ms (7,7×) con 6,5 % de llamadas extra.</li><li><strong>Reordenar por EWMA:</strong> <code>reorder: ewma</code> pone primero el eslabón más rápido.</li><li><strong>AIMD:</strong> bulkhead adaptativo opcional (<code>adaptive: true</code>): +1 tras una ventana de éxitos, mitad con 429/timeout/TTFT lento.</li><li><strong>Visión:</strong> solo alias con <code>vision: true</code> aceptan imágenes; si no, 400 <code>images_not_supported</code>.</li><li><strong>Guardrails heurísticos:</strong> inyección de prompt (ES/EN) y PII por regex; modos <code>off|monitor|enforce</code>; <code>X-Untrusted-Content</code>.</li><li><strong>Recarga en caliente:</strong> <code>POST /admin/reload</code> o vigilante de archivos; todo o nada.</li><li><strong>No construido:</strong> Prompt Guard 2 (ONNX), redacción con Presidio, Langfuse.</li></ul></div></details></li>
+      <ul><li><strong>Hedging (G12):</strong> si el primer eslabón calla más de <code>hedge_delay_s</code> (o 3× su EWMA de TTFT), se compite con el siguiente; gana el primero que responde y el perdedor se cancela. Medido: p99 1015 ms → 131 ms (7,7×) con 6,5 % de llamadas extra.</li><li><strong>Reordenar por EWMA:</strong> <code>reorder: ewma</code> pone primero el eslabón más rápido.</li><li><strong>AIMD:</strong> bulkhead adaptativo opcional (<code>adaptive: true</code>): +1 tras una ventana de éxitos, mitad con 429/timeout/TTFT lento.</li><li><strong>Visión:</strong> solo alias con <code>vision: true</code> aceptan imágenes; si no, 400 <code>images_not_supported</code>.</li><li><strong>Guardrails heurísticos:</strong> inyección de prompt (ES/EN) y PII por regex; modos <code>off|monitor|enforce</code>; <code>X-Untrusted-Content</code>.</li><li><strong>Recarga en caliente:</strong> <code>POST /admin/reload</code> o vigilante de archivos; todo o nada.</li><li><strong>Presidio:</strong> redacta el prompt del log cuando <code>GW_LOG_PROMPTS=true</code> (<code>uv sync --extra pii</code>). Usa un pipeline de spaCy en blanco: solo reconocedores de patrón (email, tarjeta, teléfono, IBAN, SSN, IP, URL, DNI); nombres y lugares no se redactan, y no redacta el tráfico saliente.</li><li><strong>Langfuse:</strong> exporta spans por OTLP/HTTP (<code>GW_LANGFUSE_HOST/PUBLIC_KEY/SECRET_KEY</code>, requiere <code>--extra otel</code>) porque su API de ingestión legada está deprecada. Sin texto de prompts. Solo se probó la configuración (endpoint, auth Basic, header de versión), nunca un Langfuse real.</li><li><strong>Prompt Guard 2 (ONNX):</strong> clasificador en <code>guardrails/promptguard.py</code>, se activa si hay modelo en <code>models/prompt-guard/</code>. El modelo es gated (licencia de Meta), así que solo se probó con una sesión falsa y nunca con pesos reales.</li></ul></div></details></li>
   </ol>
 </section>
 
@@ -190,7 +190,7 @@ footer{padding:32px 0 60px;color:var(--muted);font-size:.9rem}
 <section id="chat">
   <h2>Chat de prueba</h2>
   <p>Dos modos. <strong>Demo simulado</strong> corre aquí mismo y reproduce cómo el gateway elige proveedor, cae al siguiente, usa la caché y devuelve headers. <strong>Gateway real</strong> intenta llamar a tu servidor.</p>
-  <p class="hint">Importante: esta página corre en un marco aislado que bloquea las llamadas de red a otros sitios, así que el modo real casi seguro será rechazado aquí. Para probar tu gateway de verdad, abre <code>http://localhost:8080/</code> (el chat que ya trae el gateway, sin CORS) o usa los comandos <code>curl</code> de abajo.</p>
+  <p class="hint">Importante: dentro de claude.ai esta página corre en un marco aislado que bloquea las llamadas de red a otros sitios, así que el modo real será rechazado ahí. Para probar tu gateway de verdad abre <code>http://localhost:8080/guide</code>: es esta misma página servida por el gateway, con el modo real activo y sin CORS. También sirve <code>http://localhost:8080/</code> (chat mínimo) y los comandos <code>curl</code> de abajo.</p>
   <div class="bench">
     <div class="side">
       <div class="seg" role="group" aria-label="Modo"><button type="button" id="m-demo" aria-pressed="true">Demo simulado</button><button type="button" id="m-live" aria-pressed="false">Gateway real</button></div>
@@ -229,7 +229,7 @@ footer{padding:32px 0 60px;color:var(--muted);font-size:.9rem}
     <li><h3>Instalar y verificar</h3>
       <div class="cmd"><pre><code>git clone &lt;tu-repo&gt; llm-gateway &amp;&amp; cd llm-gateway
 uv sync --dev
-uv run pytest -q          # 328 tests
+uv run pytest -q          # 364 tests
 uv run ruff check .</code></pre><button type="button" data-copy>Copiar</button></div></li>
     <li><h3>Crear una key de cliente</h3>
       <p>Imprime la key una sola vez y la entrada para pegar en <code>config/clients.yaml</code> (archivo ignorado por git; hay un ejemplo en <code>config/clients.example.yaml</code>).</p>
@@ -256,7 +256,7 @@ print(client.chat.completions.create(model="fast",
         <tr><td>GW_ANTHROPIC_API_KEY</td><td>Claude Haiku 5.5. Solo funciona junto a <code>GW_RUN_BUDGET_USD&gt;0</code>.</td></tr>
         <tr><td>GW_RUN_BUDGET_USD</td><td>0 = proveedores de pago apagados.</td></tr>
         <tr><td>GW_CORS_ORIGINS</td><td>Orígenes de navegador permitidos (o <code>*</code>).</td></tr>
-        <tr><td>GW_CACHE_BACKEND / GW_EMBEDDER</td><td><code>memory|off</code>; <code>e5-small|hash|off</code>.</td></tr>
+        <tr><td>GW_CACHE_BACKEND / GW_EMBEDDER</td><td><code>memory|redis|off</code> (redis usa <code>GW_REDIS_URL</code>); <code>e5-small|hash|off</code>.</td></tr>
         <tr><td>GW_GUARDRAILS_MODE</td><td><code>off</code>, <code>monitor</code> (por defecto) o <code>enforce</code>.</td></tr>
         <tr><td>GW_RELOAD_INTERVAL_S</td><td>&gt;0 recarga rutas/clientes/precios al cambiar los archivos.</td></tr>
         <tr><td>GW_ADMIN_KEY_SHA256</td><td>Hash de la key de admin (<code>python scripts/new_key.py --admin</code>).</td></tr>
@@ -269,6 +269,9 @@ make up-obs    # + Prometheus, Grafana (dashboard listo), Jaeger</code></pre><bu
     <li><h3>Benchmarks</h3>
       <div class="cmd"><pre><code>uv run python -m bench.availability   # G10, ~99,98 %
 uv run python -m bench.hedging        # G12, p99 con y sin hedging
+uv run python -m bench.hits           # G9, latencia de hit exacto y semántico
+uv run python -m bench.savings        # G11, costo ahorrado (Zipf sintético)
+uv run python -m bench.guardrails     # G14, recall y falsos positivos
 uv run python -m bench.overhead       # G1, lento
 uv run python -m bench.throughput     # G13, lento</code></pre><button type="button" data-copy>Copiar</button></div></li>
     <li><h3>Recargar configuración sin reiniciar</h3>
@@ -310,11 +313,11 @@ uv run python -m bench.throughput     # G13, lento</code></pre><button type="but
   <h2>Límites honestos</h2>
   <ul>
     <li>El objetivo de sobrecarga G1 (&lt;5 ms p95) no se cumplió en la máquina Windows de prueba.</li>
-    <li>Los umbrales de la caché semántica no están calibrados; hoy solo observa. Faltan el verificador de zona gris, el backend Redis y ~1000 pares etiquetados.</li>
-    <li>G9, G11 y el caos con Toxiproxy no se han medido. No hay Docker en la máquina de desarrollo, así que el perfil <code>obs</code> y Redis no se probaron aquí.</li>
+    <li>Los umbrales de la caché semántica no están calibrados; hoy solo observa. Faltan el verificador de zona gris y ~1000 pares etiquetados. El backend Redis de la caché existe pero solo se probó con fakeredis.</li>
+    <li>G9 medido: hit exacto p95 2,0 ms y semántico p95 11,5 ms (e5-small), pero con un umbral fijado solo para la corrida porque G6 sigue abierto. G11 medido con tráfico Zipf sintético y solo caché exacta: 70–94 % del costo de referencia ahorrado según la forma del tráfico; el 30–40 % del plan depende de tráfico real y no se confirmó. El caos con Toxiproxy no se ha medido. No hay Docker en la máquina de desarrollo, así que el perfil <code>obs</code> y Redis no se probaron aquí.</li>
     <li>El adaptador de Anthropic se probó con fixtures, no contra streams reales.</li>
-    <li>El guardrail de inyección/PII es un sustituto por regex; no mide recall ni falsos positivos (G14).</li>
-    <li>Prompt Guard 2, Presidio y Langfuse no se construyeron.</li>
+    <li>El guardrail de inyección/PII es un sustituto por regex. G14 sobre un set escrito a mano de 94 filas: recall de inyección 100 % en frases directas y 0 % en paráfrasis u ofuscación, 4,7 % de falsos positivos; PII recall 100 %, precisión 93 %.</li>
+    <li>Langfuse y Prompt Guard 2 no se han ejecutado contra el servicio o los pesos reales. Presidio no detecta nombres (sin NER).</li>
     <li>El hedging, el reorden por EWMA y AIMD son opt-in y solo se probaron en proceso.</li>
   </ul>
 </section>
@@ -435,7 +438,13 @@ uv run python -m bench.throughput     # G13, lento</code></pre><button type="but
   });
   $('prompt').addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('form').requestSubmit()}});
 
-  add('bot','Hola. Soy una demo simulada del gateway. Elige un alias, escribe algo y mira los headers que devolvería.');
+  if(location.pathname==='/guide'){ // served by the gateway: same origin, so the real mode works
+    $('base').value=location.origin; setMode('live');
+    $('banner').innerHTML='<b>REAL.</b> Este chat llama al gateway que sirve esta página. Pega una key de cliente (<code>python scripts/new_key.py</code>).';
+  }
+  add('bot', location.pathname==='/guide'
+    ? 'Conectado al gateway que sirve esta página. Pega tu key y escribe un mensaje.'
+    : 'Hola. Soy una demo simulada del gateway. Elige un alias, escribe algo y mira los headers que devolvería.');
 })();
 </script>
 </body>

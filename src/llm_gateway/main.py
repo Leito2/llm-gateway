@@ -36,12 +36,11 @@ from llm_gateway.security.clients import load_clients
 from llm_gateway.security.ratelimit import RateLimiter
 from llm_gateway.settings import Settings
 from llm_gateway.state import GatewayState
-from llm_gateway.telemetry.langfuse import LangfuseExporter
 from llm_gateway.telemetry.metrics import Metrics
 from llm_gateway.telemetry.privacy import check_prompt_logging
 from llm_gateway.telemetry.record import configure_access_log
 from llm_gateway.telemetry.stats import Stats
-from llm_gateway.telemetry.tracing import build_tracer
+from llm_gateway.telemetry.tracing import build_tracer, export_targets
 
 
 @asynccontextmanager
@@ -49,15 +48,11 @@ async def _lifespan(app: FastAPI):
     gw = app.state.gateway
     gw.lifecycle.attach(asyncio.get_running_loop())
     watcher = None
-    if gw.langfuse is not None:
-        gw.langfuse.start()
     if gw.settings.reload_interval_s > 0:
         watcher = asyncio.create_task(watch(gw, gw.settings.reload_interval_s))
     yield
     if watcher is not None:
         watcher.cancel()
-    if gw.langfuse is not None:
-        await gw.langfuse.stop()
     if gw.cache is not None:
         await gw.cache.flush()
     await gw.http.aclose()
@@ -101,7 +96,7 @@ def create_app(settings: Settings | None = None, tracer_provider=None) -> FastAP
     cache = None
     if settings.cache_backend != "off":
         cache = CacheService(_build_cache_backend(settings, cache_config), cache_config, embedder)
-    tracer = build_tracer(settings.otel_endpoint, tracer_provider)
+    tracer = build_tracer(export_targets(settings), tracer_provider)
     bulkhead = Bulkhead(
         {name: spec.concurrency for name, spec in provider_config.providers.items() if spec.concurrency},
         adaptive={
@@ -111,11 +106,6 @@ def create_app(settings: Settings | None = None, tracer_provider=None) -> FastAP
         },
     )
     latency = LatencyTracker()
-    langfuse = None
-    if settings.langfuse_host and settings.langfuse_public_key and settings.langfuse_secret_key:
-        langfuse = LangfuseExporter(
-            settings.langfuse_host, settings.langfuse_public_key, settings.langfuse_secret_key, http
-        )
     executor = Executor(
         providers, breakers, bulkhead, quotas, tracer=tracer, latency=latency, on_hedge=metrics.hedges_hook
     )
@@ -143,7 +133,6 @@ def create_app(settings: Settings | None = None, tracer_provider=None) -> FastAP
         ratelimit=_build_ratelimit(settings),
         tracer=tracer,
         latency=latency,
-        langfuse=langfuse,
         prompt_guard=load_prompt_guard(settings.models_dir / "prompt-guard")
         if settings.guardrails_mode != "off"
         else None,

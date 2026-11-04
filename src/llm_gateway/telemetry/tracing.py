@@ -4,6 +4,7 @@ One span per request (`gateway.request`, ends when the response ends, streams in
 one child span per provider attempt, so fallbacks show up as siblings. The W3C `traceparent` header continues
 the caller's trace. Attributes follow the GenAI conventions; prompt text is never recorded (R16)."""
 
+import base64
 import contextlib
 import logging
 from collections.abc import Iterator, Mapping
@@ -88,15 +89,42 @@ class Tracer:
                 raise
 
 
-def build_tracer(endpoint: str | None, provider: TracerProvider | None = None) -> Tracer:
-    if provider is None and endpoint:
+ExportTarget = tuple[str, dict[str, str]]  # OTLP/HTTP base endpoint, extra headers
+
+
+def export_targets(settings) -> list[ExportTarget]:
+    """Where spans go: `GW_OTEL_ENDPOINT` (Jaeger, any OTLP collector) and/or Langfuse.
+
+    Langfuse's legacy ingestion API is deprecated (Cloud serves it only until 2026-11-16), so the export goes
+    through its OTLP/HTTP endpoint: `{host}/api/public/otel`, HTTP Basic public:secret, and the header
+    `x-langfuse-ingestion-version: 4` its docs ask direct OTLP exporters to send. The spans carry GenAI
+    attributes and never prompt text. Not run against a real Langfuse; the auth scheme, the endpoint and
+    the header come from its docs, the attribute mapping on its side is not verified here."""
+    targets: list[ExportTarget] = []
+    if settings.otel_endpoint:
+        targets.append((settings.otel_endpoint, {}))
+    if settings.langfuse_host and settings.langfuse_public_key and settings.langfuse_secret_key:
+        token = base64.b64encode(
+            f"{settings.langfuse_public_key}:{settings.langfuse_secret_key}".encode()
+        ).decode()
+        targets.append(
+            (
+                settings.langfuse_host.rstrip("/") + "/api/public/otel",
+                {"Authorization": f"Basic {token}", "x-langfuse-ingestion-version": "4"},
+            )
+        )
+    return targets
+
+
+def build_tracer(targets: list[ExportTarget], provider: TracerProvider | None = None) -> Tracer:
+    if provider is None and targets:
         try:
             from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
         except ImportError:
-            log.warning("GW_OTEL_ENDPOINT is set but the OTLP exporter is missing: uv sync --extra otel")
+            log.warning("a trace export is configured but the OTLP exporter is missing: uv sync --extra otel")
             return Tracer()
         provider = TracerProvider()
-        provider.add_span_processor(
-            BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint.rstrip("/") + "/v1/traces"))
-        )
+        for endpoint, headers in targets:
+            exporter = OTLPSpanExporter(endpoint=endpoint.rstrip("/") + "/v1/traces", headers=headers or None)
+            provider.add_span_processor(BatchSpanProcessor(exporter))
     return Tracer(provider)

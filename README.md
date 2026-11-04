@@ -6,7 +6,7 @@
 > cancellation, and Prometheus/OpenTelemetry observability.
 > Successor of my Go [llm-edge-gateway](https://github.com/Leito2/llm-edge-gateway) — every capability kept, its limits fixed.
 
-**Status:** `v1.1` — milestones M0–M9 done, 367 tests. M4 (semantic cache) is complete except the items listed under
+**Status:** `v1.1` — milestones M0–M9 done, 364 tests. M4 (semantic cache) is complete except the items listed under
 [Limitations](#part-vi--reflection): calibrated thresholds and a gray-zone verifier model.
 [`PLAN.md`](PLAN.md) holds the full design (Spanish); [`GLOSSARY.md`](GLOSSARY.md) fixes the vocabulary.
 
@@ -98,7 +98,7 @@ State lives in process memory (breakers, singleflight, in-memory cache) with **o
 | `structured/` | JSON / JSON-Schema validation and repair |
 | `security/` | client keys, admin key, per-client rate limit |
 | `guardrails/` | size and shape limits; regex injection / PII heuristics; optional Prompt Guard 2 ONNX classifier (needs model files) |
-| `telemetry/` | Prometheus metrics, JSON access log (Presidio-redacted prompt when `GW_LOG_PROMPTS=true`), OpenTelemetry tracing, Langfuse export |
+| `telemetry/` | Prometheus metrics, JSON access log (Presidio-redacted prompt when `GW_LOG_PROMPTS=true`), OpenTelemetry tracing (Jaeger and/or Langfuse over OTLP) |
 
 ## Part III — Resilience and Cost Control in Depth
 
@@ -208,7 +208,7 @@ Ollama optional for local models. Everything below runs offline against the buil
 
 ```bash
 uv sync --dev                                   # install
-uv run pytest -q                                # 367 tests
+uv run pytest -q                                # 364 tests
 python scripts/new_key.py me fast smart         # prints a key ONCE + the clients.yaml entry to paste
 ```
 
@@ -224,7 +224,7 @@ curl -s localhost:8080/v1/chat/completions \
   -d '{"model":"fast","messages":[{"role":"user","content":"hello"}]}' -i
 ```
 
-Open <http://localhost:8080/> for the chat UI (paste your key; response headers show as pills). The official SDK works
+Open <http://localhost:8080/> for the chat UI (paste your key; response headers show as pills). <http://localhost:8080/guide> serves the project guide (phases, features, run instructions) with a real chat that calls this gateway. The official SDK works
 unchanged: `OpenAI(base_url="http://localhost:8080/v1", api_key=KEY)`.
 
 | Setting (env, prefix `GW_`) | Purpose |
@@ -264,7 +264,8 @@ made the rest mechanical; every EARS requirement has a test, and the real-uvicor
 - Prompt Guard 2 is a gated Meta model; the ONNX classifier code (`guardrails/promptguard.py`) is tested only with a fake session
   and has never run on real weights. Without `models/prompt-guard/` the regex heuristic is all there is (default `monitor`). On a small hand-written set it catches every direct phrase and none of the paraphrased
   or obfuscated ones, and flags 3 of 40 benign prompts ("developer mode" on Android, "do anything now" in a song).
-- Langfuse export (`GW_LANGFUSE_*`) is tested against a mock HTTP server only, never a real Langfuse. Hot reload covers routes, client keys and prices, not providers or budget caps.
+- Langfuse export (`GW_LANGFUSE_*`) goes through its OTLP/HTTP endpoint (its legacy ingestion API is deprecated); the tests only
+  check the endpoint, Basic auth and `x-langfuse-ingestion-version` header it is configured with, never a real Langfuse. Hot reload covers routes, client keys and prices, not providers or budget caps.
 - Hedging, EWMA reordering and the adaptive bulkhead are opt-in per alias / provider and tested in-process only.
 
 **Why not LiteLLM.** LiteLLM is the reference baseline (G2, optional). This project exists to own the failure semantics

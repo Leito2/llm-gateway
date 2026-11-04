@@ -20,7 +20,6 @@ def stats(request: Request) -> dict:
         "breakers": gw.breakers.snapshot(),
         "bulkheads": gw.bulkhead.snapshot(),
         "latency": gw.latency.snapshot(),
-        "langfuse": gw.langfuse.snapshot() if gw.langfuse else None,
         "in_flight": {
             "now": gw.admission.in_flight,
             "limit": gw.admission.limit,
