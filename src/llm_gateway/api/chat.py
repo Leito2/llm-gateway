@@ -5,7 +5,7 @@ import contextlib
 import json
 import logging
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Mapping
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
@@ -59,11 +59,13 @@ class StreamCtx:
         flight: Flight | None = None,
         label: str = "",
         depth: int = 1,
+        on_complete: Callable[[Shared], None] | None = None,
     ) -> None:
         self.include_usage, self.rest, self.cleanups = include_usage, rest, cleanups
         self.deadline, self.stall_s, self.clock, self.stop = deadline, stall_s, clock, stop
         self.breaker, self.flight, self.label, self.depth = breaker, flight, label, depth
         self.shared: Shared | None = None  # set when the stream ended cleanly
+        self.on_complete = on_complete  # gets the full answer of a clean stream (cache write-back)
         self._closed = False
 
     async def close(self) -> None:
@@ -160,6 +162,8 @@ async def _event_stream(first: dict, ctx: StreamCtx) -> AsyncIterator[str]:
             ctx.label,
             ctx.depth,
         )  # what a joined flight replays
+        if ctx.on_complete:
+            ctx.on_complete(ctx.shared)
         if ctx.include_usage and usage:
             yield _sse({**meta, "object": "chat.completion.chunk", "choices": [], "usage": usage})
         yield "data: [DONE]\n\n"
@@ -173,8 +177,8 @@ async def _event_stream(first: dict, ctx: StreamCtx) -> AsyncIterator[str]:
         await ctx.close()
 
 
-def _replay_chunks(completion: dict) -> AsyncIterator[dict]:
-    """A finished completion as the chunks of a stream, for requests that joined a flight."""
+def _replay_chunks(completion: dict, pace_s: float = 0.0) -> AsyncIterator[dict]:
+    """A finished completion as the chunks of a stream (joined flights, cache hits). `pace_s` spaces them."""
 
     async def gen() -> AsyncIterator[dict]:
         meta = {
@@ -188,6 +192,8 @@ def _replay_chunks(completion: dict) -> AsyncIterator[dict]:
             **meta,
             "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": None}],
         }
+        if pace_s:
+            await asyncio.sleep(pace_s)
         yield {
             **meta,
             "choices": [
@@ -198,6 +204,8 @@ def _replay_chunks(completion: dict) -> AsyncIterator[dict]:
                 }
             ],
         }
+        if pace_s:
+            await asyncio.sleep(pace_s)
         yield {
             **meta,
             "choices": [{"index": 0, "delta": {}, "finish_reason": choice.get("finish_reason", "stop")}],
@@ -214,9 +222,16 @@ async def _replay(shared: Shared, body: ChatCompletionRequest, headers: dict, cl
         "X-Gateway-Fallback-Depth": str(shared.depth),
         "X-Gateway-Singleflight": "shared",
     }
+    return await _respond(shared.completion, body, headers, cleanups)
+
+
+async def _respond(
+    completion: dict, body: ChatCompletionRequest, headers: dict, cleanups: list, pace_s: float = 0.0
+) -> Response:
+    """A finished completion as JSON, or as an SSE stream when the client asked for one."""
     if not body.stream:
-        return JSONResponse(shared.completion, headers=headers)
-    chunks = _replay_chunks(shared.completion)
+        return JSONResponse(completion, headers=headers)
+    chunks = _replay_chunks(completion, pace_s)
     ctx = StreamCtx(
         include_usage=bool(body.stream_options and body.stream_options.include_usage),
         rest=chunks,
@@ -278,7 +293,7 @@ async def chat_completions(
         ticket.release
     ]  # a stream takes these over and runs them at its end
     try:
-        return await _serve(gw, body, client, policy, rid, cleanups)
+        return await _serve(gw, body, client, policy, rid, cleanups, request.headers)
     finally:
         for cleanup in cleanups:
             cleanup()
@@ -291,6 +306,7 @@ async def _serve(
     policy,
     rid: str,
     cleanups: list[Callable[[], None]],
+    request_headers: Mapping[str, str],
 ) -> Response:
     chain = usable_chain(policy, gw.providers)
     max_tokens = policy.max_tokens if body.max_tokens is None else min(body.max_tokens, policy.max_tokens)
@@ -299,9 +315,28 @@ async def _serve(
     if body.max_tokens is not None and body.max_tokens > policy.max_tokens:
         base_headers["X-Max-Tokens-Clamped"] = str(policy.max_tokens)
 
+    # Cache first (PLAN §6): a hit costs no provider call, no quota and no bulkhead slot.
+    creq = None
+    if gw.cache is not None:
+        creq = gw.cache.prepare(client, body.model, policy, body, request_headers)
+        hit = await gw.cache.lookup(creq) if creq else None
+        if hit is not None:
+            gw.stats.record(body.model, "cache", 200)
+            headers = {
+                **base_headers,
+                "X-Gateway-Provider": hit.entry.provider,
+                "X-Gateway-Fallback-Depth": "0",
+                "X-Cache-Layer": hit.layer,
+            }
+            if hit.similarity is not None:
+                headers["X-Cache-Similarity"] = f"{hit.similarity:.4f}"
+            pace_s = gw.cache.config.stream_pace_ms / 1000
+            return await _respond(hit.entry.response, body, headers, cleanups, pace_s)
+
     # Identical cacheable requests in flight share one provider call (singleflight, PLAN §4.7).
     flight: Flight | None = None
-    if policy.cache if body.cache is None else body.cache:
+    private = request_headers.get("x-cache-scope", "").strip().lower() == "private"
+    if not private and (creq is not None or (policy.cache if body.cache is None else body.cache)):
         key = flight_key(
             client,
             body.model,
@@ -349,6 +384,8 @@ async def _serve(
     if attempt.completion is not None:
         if flight:
             flight.resolve(Shared(attempt.completion, label, attempt.depth))
+        if creq is not None:
+            gw.cache.store_later(creq, attempt.completion, label, degraded=target.degraded)
         return JSONResponse(attempt.completion, headers=headers)
 
     ctx = StreamCtx(
@@ -362,6 +399,11 @@ async def _serve(
         flight=flight,
         label=label,
         depth=attempt.depth,
+        on_complete=(
+            (lambda sh: gw.cache.store_later(creq, sh.completion, label, degraded=target.degraded))
+            if creq is not None
+            else None
+        ),
     )
     cleanups.clear()
     return StreamingResponse(

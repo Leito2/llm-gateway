@@ -1,0 +1,12 @@
+# Semantic cache tuning (PLAN §6). Thresholds are per embedder: a score means something different for each model.
+# `null` = not calibrated with G6 yet -> the semantic layer only OBSERVES (it logs the hit it would have served and
+# never serves it). The exact layer works from day one. Fill t_high / t_low from the precision-recall curve (M4, G6).
+max_entries: 5000          # memory backend
+stream_pace_ms: 0          # delay between chunks when a cache hit is streamed (0 = all at once)
+embed_timeout_s: 0.3       # PLAN §4.1: a slow embedder is a miss, not a wait
+verify_timeout_s: 0.5
+write_queue: 256           # pending write-backs; beyond this they are dropped
+embedders:
+  e5-small:         { t_high: null, t_low: null }   # multilingual-e5-small, ONNX int8 (default)
+  embeddinggemma:   { t_high: null, t_low: null }
+  nomic-embed-text: { t_high: null, t_low: null }

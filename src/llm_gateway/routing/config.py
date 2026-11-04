@@ -18,8 +18,10 @@ class AliasPolicy(BaseModel):
     ttft_timeout_s: float = 10.0
     stall_timeout_s: float = 10.0
     total_timeout_s: float = 120.0
-    cache: bool = False
-    semantic_cache: bool = True         # mandatory by default (PLAN §6); opt-out per alias
+    cache: bool = False                 # exact cache only (L1)
+    semantic_cache: bool = True         # exact + semantic (L1, then L2): on by default (PLAN §6), opt-out
+    cache_ttl_s: int = Field(default=86400, gt=0)
+    semantic_scope: Literal["single", "last_turn"] = "single"   # last_turn: every user question stands alone
     hedge: bool = False
     allow_degraded: bool = True         # False: never fall back to a `degraded` link
     priority: Literal["interactive", "batch"] = "interactive"

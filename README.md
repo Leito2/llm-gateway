@@ -7,7 +7,7 @@
 > Shared by four portfolio systems: real-time fraud detection, a System 1/System 2 router, a live RAG platform,
 > and a GraphRAG multi-agent research system.
 
-**Status:** 🟡 M3 resilience (circuit breakers, retries, timeouts per phase, bulkheads, load shedding, singleflight, graceful shutdown) on top of M2 providers (Ollama/Groq/Google, per-client API keys, outbound quotas, chat UI at `/`). See [`PLAN.md`](PLAN.md) for the full design (Spanish).
+**Status:** 🟡 M4a semantic cache (exact + semantic layers, lexical guards, tags, `/v1/embeddings`; real embedders pending) on top of M3 resilience (circuit breakers, retries, timeouts per phase, bulkheads, load shedding, singleflight, graceful shutdown) on top of M2 providers (Ollama/Groq/Google, per-client API keys, outbound quotas, chat UI at `/`). See [`PLAN.md`](PLAN.md) for the full design (Spanish).
 
 ## TL;DR — Results at a Glance
 _To be filled with measured numbers (overhead p95, budget under concurrency, cache hit rate) — milestone M9._

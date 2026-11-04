@@ -6,8 +6,12 @@ import httpx
 from fastapi import FastAPI
 
 from llm_gateway import __version__
-from llm_gateway.api import admin, chat, health, models, ui
+from llm_gateway.api import admin, chat, embeddings, health, models, ui
 from llm_gateway.api.errors import install_error_handlers
+from llm_gateway.cache.config import load_cache_config
+from llm_gateway.cache.embedder import build_embedder
+from llm_gateway.cache.memory import MemoryBackend
+from llm_gateway.cache.service import CacheService
 from llm_gateway.providers.config import load_providers
 from llm_gateway.providers.registry import HTTP_TIMEOUT, build_providers
 from llm_gateway.quotas.limiter import QuotaLimiter
@@ -29,6 +33,8 @@ async def _lifespan(app: FastAPI):
     gw = app.state.gateway
     gw.lifecycle.attach(asyncio.get_running_loop())
     yield
+    if gw.cache is not None:
+        await gw.cache.flush()
     await gw.http.aclose()
 
 
@@ -44,6 +50,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     providers = build_providers(settings, provider_config, http)
     quotas = QuotaLimiter({name: spec.quotas for name, spec in provider_config.providers.items()})
     breakers = BreakerRegistry()
+    cache_config = load_cache_config(settings.cache_file)
+    embedder = None if settings.embedder == "off" else build_embedder(settings.embedder)
+    cache = (
+        None
+        if settings.cache_backend == "off"
+        else CacheService(MemoryBackend(cache_config.max_entries), cache_config, embedder)
+    )
     bulkhead = Bulkhead({name: spec.concurrency for name, spec in provider_config.providers.items()
                          if spec.concurrency})
 
@@ -62,9 +75,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         singleflight=Singleflight(),
         lifecycle=Lifecycle(settings.drain_timeout_s),
         executor=Executor(providers, breakers, bulkhead, quotas),
+        embedder=embedder,
+        cache=cache,
     )
     install_error_handlers(app)
-    for module in (health, models, chat, admin, ui):
+    for module in (health, models, chat, embeddings, admin, ui):
         app.include_router(module.router)
     return app
 

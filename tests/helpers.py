@@ -40,10 +40,12 @@ def _write_configs() -> tuple[Path, Path]:
 CLIENTS_FILE, PROVIDERS_FILE = _write_configs()
 
 
-def make_app(env: str = "test") -> FastAPI:
-    """Only `mock` is registered: no key is set and .env is ignored, so no test touches the network."""
+def make_app(env: str = "test", **overrides) -> FastAPI:
+    """Only `mock` is registered: no key is set and .env is ignored, so no test touches the network.
+    The cache and embedder are off unless a test asks (`cache_backend="memory"`, `embedder="hash"`)."""
+    kwargs = {"cache_backend": "off", "embedder": "off", **overrides}
     settings = Settings(_env_file=None, env=env, clients_file=CLIENTS_FILE, providers_file=PROVIDERS_FILE,
-                        groq_api_key=None, google_api_key=None, anthropic_api_key=None)
+                        groq_api_key=None, google_api_key=None, anthropic_api_key=None, **kwargs)
     return create_app(settings)
 
 
