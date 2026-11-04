@@ -3,8 +3,10 @@ from dataclasses import dataclass
 
 import httpx
 
+from llm_gateway.budget.service import BudgetService
 from llm_gateway.cache.embedder import Embedder
 from llm_gateway.cache.service import CacheService
+from llm_gateway.pricing.prices import PriceBook
 from llm_gateway.providers.base import Provider
 from llm_gateway.quotas.limiter import QuotaLimiter
 from llm_gateway.resilience.admission import Admission
@@ -36,3 +38,5 @@ class GatewayState:
     executor: Executor
     embedder: Embedder | None = None
     cache: CacheService | None = None
+    prices: PriceBook | None = None
+    budget: BudgetService | None = None

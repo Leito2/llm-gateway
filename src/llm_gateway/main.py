@@ -8,10 +8,13 @@ from fastapi import FastAPI
 from llm_gateway import __version__
 from llm_gateway.api import admin, chat, embeddings, health, models, ui
 from llm_gateway.api.errors import install_error_handlers
+from llm_gateway.budget.memory import MemoryBudget
+from llm_gateway.budget.service import BudgetService
 from llm_gateway.cache.config import load_cache_config
 from llm_gateway.cache.embedder import build_embedder
 from llm_gateway.cache.memory import MemoryBackend
 from llm_gateway.cache.service import CacheService
+from llm_gateway.pricing.prices import load_prices
 from llm_gateway.providers.config import load_providers
 from llm_gateway.providers.registry import HTTP_TIMEOUT, build_providers
 from llm_gateway.quotas.limiter import QuotaLimiter
@@ -50,6 +53,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     providers = build_providers(settings, provider_config, http)
     quotas = QuotaLimiter({name: spec.quotas for name, spec in provider_config.providers.items()})
     breakers = BreakerRegistry()
+    prices = load_prices(settings.prices_file)
+    stats = Stats()
+    if settings.budget_backend == "redis":
+        import redis.asyncio as aioredis
+
+        from llm_gateway.budget.redis_store import RedisBudget
+
+        store = RedisBudget(aioredis.from_url(settings.redis_url))
+    else:
+        store = MemoryBudget()
+    budget = BudgetService(
+        store,
+        prices,
+        {n for n, spec in provider_config.providers.items() if spec.paid},
+        run_cap_usd=settings.run_budget_usd,
+        global_day_cap_usd=settings.global_day_budget_usd,
+        on_cost=stats.record_cost,
+    )
     cache_config = load_cache_config(settings.cache_file)
     embedder = None if settings.embedder == "off" else build_embedder(settings.embedder, settings.models_dir)
     cache = (
@@ -67,7 +88,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         providers=providers,
         clients=clients,
         quotas=quotas,
-        stats=Stats(),
+        stats=stats,
         http=http,
         breakers=breakers,
         bulkhead=bulkhead,
@@ -77,6 +98,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         executor=Executor(providers, breakers, bulkhead, quotas),
         embedder=embedder,
         cache=cache,
+        prices=prices,
+        budget=budget,
     )
     install_error_handlers(app)
     for module in (health, models, chat, embeddings, admin, ui):

@@ -24,7 +24,14 @@ dependencies = [
 semantic = ["onnxruntime>=1.19", "tokenizers>=0.20", "numpy>=1.26"]
 
 [dependency-groups]
-dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.6", "mypy>=1.11", "openai>=1.50"]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "openai>=1.50",
+    "fakeredis[lua]>=2.40.0",
+]
 
 [build-system]
 requires = ["hatchling"]

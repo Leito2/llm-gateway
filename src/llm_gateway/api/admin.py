@@ -50,3 +50,17 @@ async def invalidate_cache(
             400, "invalid_request", "No valid tag. Tags use letters, digits and `:_.-/`.", param="tags"
         )
     return {"removed": await gw.cache.invalidate(tags, client=client), "tags": sorted(tags)}
+
+
+@router.get("/admin/budget")
+async def budget(request: Request, client: Annotated[str, Depends(require_client)]) -> dict:
+    """Spend, holds and remaining room for the run, the caller's day and the global day, plus cost and savings
+    counters. M8 moves this behind the admin key and lets it show any client."""
+    gw = request.app.state.gateway
+    cfg = gw.clients.get(client)
+    return {
+        "client": client,
+        **await gw.budget.snapshot(client, cfg.budget_usd_per_day),
+        "cost_micro_usd": gw.stats.snapshot()["cost_micro_usd"],
+        "cache_saved_micro_usd": gw.stats.snapshot()["cache_saved_micro_usd"],
+    }

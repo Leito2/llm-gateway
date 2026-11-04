@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     groq_api_key: str | None = None               # free tier ($0)
     google_api_key: str | None = None             # Google AI Studio free tier ($0): Gemma 4
     anthropic_api_key: str | None = None          # only set for P3's final test
+    budget_backend: Literal["memory", "redis"] = "memory"   # redis: atomic Lua budget that survives restarts
+    global_day_budget_usd: float | None = None    # cap on all clients together per UTC day (paid only)
     run_budget_usd: float = 0.0                   # 0 = paid providers disabled
     log_prompts: bool = False
     guardrails_mode: str = "monitor"              # off | monitor | enforce

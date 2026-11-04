@@ -5,7 +5,7 @@ import contextlib
 import json
 import logging
 import time
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
@@ -14,6 +14,8 @@ from starlette.background import BackgroundTask
 
 from llm_gateway.api.errors import GatewayError, request_id
 from llm_gateway.api.schemas import ChatCompletionRequest
+from llm_gateway.budget.service import estimate_emitted
+from llm_gateway.pricing.prices import Usage, reference_micro
 from llm_gateway.pricing.tokens import estimate_prompt_tokens
 from llm_gateway.providers.base import ProviderError
 from llm_gateway.resilience.admission import effective_priority
@@ -60,12 +62,16 @@ class StreamCtx:
         label: str = "",
         depth: int = 1,
         on_complete: Callable[[Shared], None] | None = None,
+        finalize: Callable[["StreamCtx"], Awaitable[None]] | None = None,
     ) -> None:
         self.include_usage, self.rest, self.cleanups = include_usage, rest, cleanups
         self.deadline, self.stall_s, self.clock, self.stop = deadline, stall_s, clock, stop
         self.breaker, self.flight, self.label, self.depth = breaker, flight, label, depth
         self.shared: Shared | None = None  # set when the stream ended cleanly
         self.on_complete = on_complete  # gets the full answer of a clean stream (cache write-back)
+        self.finalize = finalize  # settles the budget and books the cost when the stream is over
+        self.usage: dict | None = None  # the provider's own usage, when it sent one
+        self.emitted_chars = 0
         self._closed = False
 
     async def close(self) -> None:
@@ -82,7 +88,9 @@ class StreamCtx:
             cleanup()
         if self.flight:
             self.flight.resolve(self.shared)  # None makes waiting followers run on their own
-        # Budget settlement for aborted streams joins here in M5 (reserve → settle with the tokens produced).
+        if self.finalize:
+            with contextlib.suppress(Exception):
+                await self.finalize(self)
 
 
 async def _next_chunk(ctx: StreamCtx) -> dict | None:
@@ -135,8 +143,11 @@ async def _event_stream(first: dict, ctx: StreamCtx) -> AsyncIterator[str]:
         while chunk is not None:
             last = chunk
             usage = chunk.pop("usage", None) or usage
+            ctx.usage = usage
             for choice in chunk.get("choices") or []:
-                text.append((choice.get("delta") or {}).get("content") or "")
+                piece = (choice.get("delta") or {}).get("content") or ""
+                text.append(piece)
+                ctx.emitted_chars += len(piece)
                 finish = choice.get("finish_reason") or finish
             if chunk.get("choices"):
                 yield _sse(chunk)
@@ -315,6 +326,17 @@ async def _serve(
     if body.max_tokens is not None and body.max_tokens > policy.max_tokens:
         base_headers["X-Max-Tokens-Clamped"] = str(policy.max_tokens)
 
+    prompt_tokens = estimate_prompt_tokens(body.messages)
+    if policy.max_input_tokens is not None and prompt_tokens > policy.max_input_tokens:
+        gw.stats.record(body.model, "-", 400)
+        raise GatewayError(
+            400,
+            "input_too_long",
+            f"The input is about {prompt_tokens} tokens; alias `{body.model}` accepts at most "
+            f"{policy.max_input_tokens}.",
+            param="messages",
+        )
+
     # Cache first (PLAN §6): a hit costs no provider call, no quota and no bulkhead slot.
     creq = None
     if gw.cache is not None:
@@ -330,6 +352,7 @@ async def _serve(
             }
             if hit.similarity is not None:
                 headers["X-Cache-Similarity"] = f"{hit.similarity:.4f}"
+            _book_saving(gw, hit.layer, hit.entry.provider, hit.entry.response.get("usage"))
             pace_s = gw.cache.config.stream_pace_ms / 1000
             return await _respond(hit.entry.response, body, headers, cleanups, pace_s)
 
@@ -355,13 +378,22 @@ async def _serve(
                 return await _replay(shared, body, base_headers, cleanups)
             # The leader failed: this request runs on its own, without a flight.
 
+    gate = None
+    if gw.budget is not None and any(t.provider in gw.budget.paid for t in chain):
+        cfg = gw.clients.get(client)
+        use_prompt_cache = policy.prompt_cache and request_headers.get("x-prompt-cache", "").lower() != "off"
+        gate = gw.budget.gate(
+            client, cfg.budget_usd_per_day, policy, prompt_tokens, max_tokens, use_prompt_cache
+        )
+
     try:
         attempt = await gw.executor.run(
             policy=policy,
             chain=chain,
             request=upstream,
             stream=body.stream,
-            quota_tokens=estimate_prompt_tokens(body.messages) + max_tokens,
+            quota_tokens=prompt_tokens + max_tokens,
+            gate=gate,
         )
     except ProviderError as exc:  # kind == "client": the request itself is invalid
         if flight:
@@ -380,13 +412,24 @@ async def _serve(
     target = attempt.target
     label = f"{target.provider}:{target.model}"
     headers = {**base_headers, "X-Gateway-Provider": label, "X-Gateway-Fallback-Depth": str(attempt.depth)}
+    if gate is not None and gate.skipped:
+        headers["X-Budget-Skipped"] = ",".join(dict.fromkeys(gate.skipped))
     gw.stats.record(body.model, target.provider, 200)
     if attempt.completion is not None:
         if flight:
             flight.resolve(Shared(attempt.completion, label, attempt.depth))
         if creq is not None:
             gw.cache.store_later(creq, attempt.completion, label, degraded=target.degraded)
+        if gate is None or not gate.is_paid(target):
+            _book_free_cost(gw, client, target.provider, target.model, attempt.completion.get("usage"))
         return JSONResponse(attempt.completion, headers=headers)
+
+    async def finalize(ctx: StreamCtx) -> None:
+        if attempt.reservation is not None:
+            emitted = estimate_emitted(ctx.emitted_chars)
+            await gate.settle(attempt.reservation, ctx.usage, emitted_tokens=emitted)
+        else:
+            _book_free_cost(gw, client, target.provider, target.model, ctx.usage)
 
     ctx = StreamCtx(
         include_usage=bool(body.stream_options and body.stream_options.include_usage),
@@ -399,6 +442,7 @@ async def _serve(
         flight=flight,
         label=label,
         depth=attempt.depth,
+        finalize=finalize,
         on_complete=(
             (lambda sh: gw.cache.store_later(creq, sh.completion, label, degraded=target.degraded))
             if creq is not None
@@ -425,6 +469,15 @@ def _chain_failure(gw: GatewayState, alias: str, rid: str, failed: ChainFailed) 
             type_="server_error",
             headers=headers,
         )
+    if failed.skipped.get("budget") and not failed.tried and failed.last_error is None:
+        gw.stats.record(alias, "-", 402)
+        return GatewayError(
+            402,
+            "budget_exceeded",
+            f"No provider could answer alias `{alias}` within the budget (paid links were skipped).",
+            type_="insufficient_quota",
+            headers=headers,
+        )
     gw.stats.record(alias, "-", 503)
     skipped = ", ".join(f"{n} by {why}" for why, n in failed.skipped.items() if n)
     registered = ", ".join(sorted(gw.providers)) or "none"
@@ -444,3 +497,18 @@ def _chain_failure(gw: GatewayState, alias: str, rid: str, failed: ChainFailed) 
         type_="server_error",
         headers=headers,
     )
+
+
+def _book_free_cost(gw: GatewayState, client: str, provider: str, model: str, usage: dict | None) -> None:
+    """Free tiers cost nothing, but their reference price feeds the savings report."""
+    parsed = Usage.from_completion(usage)
+    if parsed is not None:
+        gw.stats.record_cost(client, provider, 0, reference_micro(gw.prices.price(provider, model), parsed))
+
+
+def _book_saving(gw: GatewayState, layer: str, provider_label: str, usage: dict | None) -> None:
+    """A cache hit saves what the original call cost (reference price for free tiers). G11 reads this."""
+    parsed = Usage.from_completion(usage)
+    if parsed is not None:
+        provider, _, model = provider_label.partition(":")
+        gw.stats.record_saving(layer, reference_micro(gw.prices.price(provider, model), parsed))

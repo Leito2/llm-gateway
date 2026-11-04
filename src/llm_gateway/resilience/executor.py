@@ -12,6 +12,8 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 
 from llm_gateway.api.schemas import ChatCompletionRequest
+from llm_gateway.budget.service import BudgetGate, BudgetSkip
+from llm_gateway.budget.store import Reservation
 from llm_gateway.providers.base import Provider, ProviderError
 from llm_gateway.quotas.limiter import QuotaLimiter
 from llm_gateway.resilience.breaker import BreakerRegistry, CircuitBreaker, State
@@ -51,6 +53,8 @@ class Attempt:
     completion: dict | None = None
     first: dict | None = None
     stream: AsyncIterator[dict] | None = None
+    gate: BudgetGate | None = None
+    reservation: Reservation | None = None  # streams: the caller settles it when the stream ends
 
 
 class ChainFailed(Exception):
@@ -79,12 +83,13 @@ class Executor:
         request: ChatCompletionRequest,
         quota_tokens: int,
         stream: bool,
+        gate: BudgetGate | None = None,
     ) -> Attempt:
         """First link that answers. Raises ProviderError(kind="client") as is, ChainFailed otherwise."""
         deadline = self.clock() + policy.total_timeout_s
         attempts = tried = 0
         last_error: ProviderError | None = None
-        skipped = {"breaker": 0, "quota": 0, "bulkhead": 0}
+        skipped = {"breaker": 0, "quota": 0, "bulkhead": 0, "budget": 0}
 
         for target in chain:
             if attempts >= MAX_ATTEMPTS:
@@ -105,6 +110,16 @@ class Executor:
                 skipped["breaker"] += 1
                 continue
 
+            reservation: Reservation | None = None
+            if gate is not None and gate.is_paid(target):
+                try:
+                    reservation = await gate.reserve(target)
+                except BudgetSkip:
+                    self.bulkhead.release(name)
+                    breaker.release_trial()
+                    skipped["budget"] += 1
+                    continue
+
             tried += 1
             lease = Lease(lambda n=name: self.bulkhead.release(n))
             retries = 0
@@ -112,15 +127,24 @@ class Executor:
                 if self.clock() >= deadline:
                     lease.close()
                     breaker.release_trial()
+                    await _release(gate, reservation)
                     raise ChainFailed(last_error=last_error, tried=tried, timed_out=True, skipped=skipped)
                 attempts += 1
                 try:
-                    return await self._call(target, breaker, lease, tried, deadline, policy, request, stream)
+                    attempt = await self._call(
+                        target, breaker, lease, tried, deadline, policy, request, stream
+                    )
+                    attempt.gate, attempt.reservation = gate, reservation
+                    if reservation is not None and attempt.completion is not None:
+                        await gate.settle(reservation, attempt.completion.get("usage"))
+                        attempt.reservation = None
+                    return attempt
                 except ProviderError as exc:
                     exc.provider = name
                     if exc.kind == "client":
                         lease.close()
                         breaker.release_trial()
+                        await _release(gate, reservation)
                         raise
                     last_error = exc
                     breaker.record_failure()
@@ -134,8 +158,11 @@ class Executor:
                 except BaseException:  # cancelled (client left): no verdict on the provider
                     lease.close()
                     breaker.release_trial()
+                    if reservation is not None:  # the call may have run: charge the input, not the output
+                        await gate.settle(reservation, None)
                     raise
             lease.close()
+            await _release(gate, reservation)
 
         raise ChainFailed(
             last_error=last_error, tried=tried, timed_out=self.clock() >= deadline, skipped=skipped
@@ -220,6 +247,12 @@ class Executor:
             raise
         breaker.record_success(slow=self.clock() - started > SLOW_FRACTION * policy.ttft_timeout_s)
         return Attempt(target, depth, breaker, lease, deadline, first=first, stream=gen)
+
+
+async def _release(gate: BudgetGate | None, reservation: Reservation | None) -> None:
+    """The link produced nothing: give the whole hold back."""
+    if gate is not None and reservation is not None:
+        await gate.settle(reservation, failed=True)
 
 
 async def _aclose(gen: AsyncIterator[dict]) -> None:
