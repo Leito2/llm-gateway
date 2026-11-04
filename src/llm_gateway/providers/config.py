@@ -1,4 +1,5 @@
 """Load and validate config/providers.yaml."""
+
 from pathlib import Path
 from typing import Literal
 
@@ -12,8 +13,8 @@ from llm_gateway.routing.config import RoutesConfig
 class ProviderSpec(BaseModel):
     kind: Literal["mock", "ollama", "openai_compat", "anthropic"]
     base_url: str | None = None
-    base_url_env: str | None = None      # GW_* variable that holds the URL (Settings field of the same name)
-    api_key_env: str | None = None       # GW_* variable with the key; if it is empty the provider is unused
+    base_url_env: str | None = None  # GW_* variable that holds the URL (Settings field of the same name)
+    api_key_env: str | None = None  # GW_* variable with the key; if it is empty the provider is unused
     quotas: QuotaSpec = Field(default_factory=QuotaSpec)
     concurrency: int | None = Field(default=None, gt=0)
     paid: bool = False
@@ -27,8 +28,10 @@ class ProvidersConfig(BaseModel):
         for alias, policy in routes.aliases.items():
             for target in policy.chain:
                 if target.provider not in self.providers:
-                    raise ValueError(f"alias {alias!r} uses provider {target.provider!r}, "
-                                     "which is not declared in providers.yaml")
+                    raise ValueError(
+                        f"alias {alias!r} uses provider {target.provider!r}, "
+                        "which is not declared in providers.yaml"
+                    )
 
 
 def load_providers(path: Path) -> ProvidersConfig:

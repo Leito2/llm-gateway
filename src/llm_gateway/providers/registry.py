@@ -1,8 +1,10 @@
 """Build the provider registry. A provider that is not registered is skipped by the router."""
+
 import logging
 
 import httpx
 
+from llm_gateway.providers.anthropic import DEFAULT_BASE_URL, AnthropicProvider
 from llm_gateway.providers.base import Provider
 from llm_gateway.providers.config import ProvidersConfig, ProviderSpec
 from llm_gateway.providers.mock import MockProvider
@@ -20,8 +22,9 @@ def _setting(settings: Settings, env_name: str | None) -> str | None:
     return getattr(settings, env_name.removeprefix("GW_").lower(), None) if env_name else None
 
 
-def build_providers(settings: Settings, config: ProvidersConfig,
-                    http: httpx.AsyncClient) -> dict[str, Provider]:
+def build_providers(
+    settings: Settings, config: ProvidersConfig, http: httpx.AsyncClient
+) -> dict[str, Provider]:
     providers: dict[str, Provider] = {}
     for name, spec in config.providers.items():
         provider = _build(name, spec, settings, http)
@@ -33,10 +36,15 @@ def build_providers(settings: Settings, config: ProvidersConfig,
 def _build(name: str, spec: ProviderSpec, settings: Settings, http: httpx.AsyncClient) -> Provider | None:
     if spec.kind == "mock":
         return MockProvider() if settings.env in ("dev", "test") else None
-    if spec.paid or spec.kind == "anthropic":
-        log.info("provider %s not registered: paid providers arrive with the budget (M5/M7)", name)
-        return None
     api_key = _setting(settings, spec.api_key_env)
+    if spec.paid and settings.run_budget_usd <= 0:
+        log.info("provider %s not registered: paid providers need GW_RUN_BUDGET_USD > 0", name)
+        return None
+    if spec.kind == "anthropic":
+        if not api_key:
+            log.info("provider %s not registered: %s is not set", name, spec.api_key_env)
+            return None
+        return AnthropicProvider(api_key, http, spec.base_url or DEFAULT_BASE_URL)
     if spec.api_key_env and not api_key:
         log.info("provider %s not registered: %s is not set", name, spec.api_key_env)
         return None

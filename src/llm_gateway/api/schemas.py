@@ -27,6 +27,10 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: int | None = Field(default=None, gt=0)
     response_format: ResponseFormat | None = None
     cache: bool | None = None           # gateway extension: opt in/out of caching
+    top_p: float | None = Field(default=None, ge=0.0, le=1.0)
+    reasoning_effort: Literal["low", "medium", "high"] | None = None   # clamped to the alias's `effort`
+    # Set by the gateway, never by the client (`exclude`d from dumps; _serve overwrites whatever came in):
+    prompt_cache: bool = Field(default=False, exclude=True)
 
 
 class ModelCard(BaseModel):

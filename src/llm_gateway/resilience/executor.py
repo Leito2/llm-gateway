@@ -20,6 +20,7 @@ from llm_gateway.resilience.breaker import BreakerRegistry, CircuitBreaker, Stat
 from llm_gateway.resilience.bulkhead import Bulkhead
 from llm_gateway.resilience.retry import backoff_s
 from llm_gateway.routing.config import AliasPolicy, Target
+from llm_gateway.structured.validate import OutputValidator, merge_usage, repair_request
 
 log = logging.getLogger(__name__)
 
@@ -55,6 +56,16 @@ class Attempt:
     stream: AsyncIterator[dict] | None = None
     gate: BudgetGate | None = None
     reservation: Reservation | None = None  # streams: the caller settles it when the stream ends
+    extra_calls: int = 0  # provider calls beyond the first (a structured-output repair)
+
+
+class InvalidOutput(ProviderError):
+    """The link answered, but not in the requested `response_format`, even after one repair (R15).
+    A model quality problem, not an availability one: the breaker does not count it."""
+
+    def __init__(self, message: str, *, usage: dict | None, calls: int) -> None:
+        super().__init__(message, kind="provider")
+        self.usage, self.calls = usage, calls  # what the failed calls cost, and how many were made
 
 
 class ChainFailed(Exception):
@@ -84,6 +95,7 @@ class Executor:
         quota_tokens: int,
         stream: bool,
         gate: BudgetGate | None = None,
+        validate: OutputValidator | None = None,
     ) -> Attempt:
         """First link that answers. Raises ProviderError(kind="client") as is, ChainFailed otherwise."""
         deadline = self.clock() + policy.total_timeout_s
@@ -123,6 +135,7 @@ class Executor:
             tried += 1
             lease = Lease(lambda n=name: self.bulkhead.release(n))
             retries = 0
+            link_usage: dict | None = None  # what an invalid-output link cost, to charge it
             while True:
                 if self.clock() >= deadline:
                     lease.close()
@@ -132,8 +145,18 @@ class Executor:
                 attempts += 1
                 try:
                     attempt = await self._call(
-                        target, breaker, lease, tried, deadline, policy, request, stream
+                        target,
+                        breaker,
+                        lease,
+                        tried,
+                        deadline,
+                        policy,
+                        request,
+                        stream,
+                        validate,
+                        repair_ok=attempts < MAX_ATTEMPTS,
                     )
+                    attempts += attempt.extra_calls
                     attempt.gate, attempt.reservation = gate, reservation
                     if reservation is not None and attempt.completion is not None:
                         await gate.settle(reservation, attempt.completion.get("usage"))
@@ -147,7 +170,11 @@ class Executor:
                         await _release(gate, reservation)
                         raise
                     last_error = exc
-                    breaker.record_failure()
+                    if isinstance(exc, InvalidOutput):
+                        attempts += exc.calls - 1
+                        link_usage = exc.usage
+                    else:
+                        breaker.record_failure()
                     if exc.status == 429:
                         self.quotas.block(name, exc.retry_after or BLOCK_AFTER_429_S)
                     log.warning("provider %s failed (%s): %s", name, exc.kind, exc)
@@ -162,7 +189,7 @@ class Executor:
                         await gate.settle(reservation, None)
                     raise
             lease.close()
-            await _release(gate, reservation)
+            await _release(gate, reservation, link_usage)
 
         raise ChainFailed(
             last_error=last_error, tried=tried, timed_out=self.clock() >= deadline, skipped=skipped
@@ -191,9 +218,13 @@ class Executor:
         policy: AliasPolicy,
         request: ChatCompletionRequest,
         stream: bool,
+        validate: OutputValidator | None = None,
+        repair_ok: bool = True,
     ) -> Attempt:
         try:
-            return await self._call_once(target, breaker, lease, depth, deadline, policy, request, stream)
+            return await self._call_once(
+                target, breaker, lease, depth, deadline, policy, request, stream, validate, repair_ok
+            )
         except (ProviderError, asyncio.CancelledError):
             raise
         except Exception as exc:  # an adapter bug is one failed link, not a crashed request
@@ -212,22 +243,39 @@ class Executor:
         policy: AliasPolicy,
         request: ChatCompletionRequest,
         stream: bool,
+        validate: OutputValidator | None = None,
+        repair_ok: bool = True,
     ) -> Attempt:
         provider = self.providers[target.provider]
         started = self.clock()
         remaining = max(0.0, deadline - started)
         if not stream:
             # Without streaming there is no first token to time: the whole call is bounded by total_timeout.
+            extra, problem = 0, None
             try:
                 async with asyncio.timeout(remaining):
                     completion = await provider.complete(request, target.model)
+                    problem = validate.check(completion) if validate is not None else None
+                    if problem is not None and repair_ok:
+                        extra = 1  # one repair retry on the same link, with the problem as context (R15)
+                        second = await provider.complete(
+                            repair_request(request, completion, problem), target.model
+                        )
+                        second["usage"] = merge_usage(completion.get("usage"), second.get("usage"))
+                        completion, problem = second, validate.check(second)
             except TimeoutError as exc:
                 raise ProviderError(
                     f"{target.provider}: no answer within {remaining:.1f}s", kind="transient", status=408
                 ) from exc
             breaker.record_success()
             lease.close()
-            return Attempt(target, depth, breaker, lease, deadline, completion=completion)
+            if problem is not None:
+                raise InvalidOutput(
+                    f"{target.provider}: invalid structured output ({problem})",
+                    usage=completion.get("usage"),
+                    calls=1 + extra,
+                )
+            return Attempt(target, depth, breaker, lease, deadline, completion=completion, extra_calls=extra)
 
         gen = provider.stream(request, target.model)
         try:
@@ -249,10 +297,15 @@ class Executor:
         return Attempt(target, depth, breaker, lease, deadline, first=first, stream=gen)
 
 
-async def _release(gate: BudgetGate | None, reservation: Reservation | None) -> None:
-    """The link produced nothing: give the whole hold back."""
+async def _release(
+    gate: BudgetGate | None, reservation: Reservation | None, usage: dict | None = None
+) -> None:
+    """The link produced nothing usable: give the hold back, charging only what `usage` says was spent."""
     if gate is not None and reservation is not None:
-        await gate.settle(reservation, failed=True)
+        if usage:
+            await gate.settle(reservation, usage)
+        else:
+            await gate.settle(reservation, failed=True)
 
 
 async def _aclose(gen: AsyncIterator[dict]) -> None:

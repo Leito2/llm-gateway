@@ -1,4 +1,5 @@
 """One adapter for every OpenAI-compatible endpoint: Ollama (/v1), Groq, Google AI Studio, vLLM, ..."""
+
 import json
 import time
 import uuid
@@ -20,7 +21,7 @@ def _classify(status: int, message: str, code: str) -> ErrorKind:
         return "provider" if any(hint in text for hint in _CONTEXT_HINTS) else "client"
     if status in (408, 429) or status >= 500:
         return "transient"
-    return "provider"      # 401, 403, 404 (unknown model), ...: our configuration, not the request
+    return "provider"  # 401, 403, 404 (unknown model), ...: our configuration, not the request
 
 
 def _retry_after(resp: httpx.Response) -> float | None:
@@ -49,7 +50,7 @@ class OpenAICompatProvider:
         if request.response_format is not None:
             body["response_format"] = request.response_format.model_dump(exclude_none=True)
         if stream:
-            body["stream_options"] = {"include_usage": True}    # without it most providers omit `usage`
+            body["stream_options"] = {"include_usage": True}  # without it most providers omit `usage`
         return body
 
     def _http_error(self, resp: httpx.Response) -> ProviderError:
@@ -71,8 +72,9 @@ class OpenAICompatProvider:
 
     async def complete(self, request: ChatCompletionRequest, model: str) -> dict:
         try:
-            resp = await self._client.post(self._url, json=self._body(request, model, False),
-                                           headers=self._headers)
+            resp = await self._client.post(
+                self._url, json=self._body(request, model, False), headers=self._headers
+            )
         except httpx.HTTPError as exc:
             raise self._network_error(exc) from exc
         if resp.status_code >= 400:
@@ -84,15 +86,19 @@ class OpenAICompatProvider:
             raise ProviderError(f"{self.name}: malformed response", kind="provider") from exc
         if not data.get("usage"):
             prompt, done = estimate_prompt_tokens(request.messages), estimate_tokens(reply)
-            data["usage"] = {"prompt_tokens": prompt, "completion_tokens": done,
-                             "total_tokens": prompt + done}
+            data["usage"] = {
+                "prompt_tokens": prompt,
+                "completion_tokens": done,
+                "total_tokens": prompt + done,
+            }
         return data
 
     async def stream(self, request: ChatCompletionRequest, model: str) -> AsyncIterator[dict]:
         seen, last, usage, reply_chars = False, {}, None, 0
         try:
-            async with self._client.stream("POST", self._url, json=self._body(request, model, True),
-                                           headers=self._headers) as resp:
+            async with self._client.stream(
+                "POST", self._url, json=self._body(request, model, True), headers=self._headers
+            ) as resp:
                 if resp.status_code >= 400:
                     await resp.aread()
                     raise self._http_error(resp)
@@ -106,7 +112,7 @@ class OpenAICompatProvider:
                         chunk = json.loads(data)
                     except ValueError as exc:
                         raise ProviderError(f"{self.name}: malformed stream chunk", kind="provider") from exc
-                    if "error" in chunk:                         # some providers report failures in-band
+                    if "error" in chunk:  # some providers report failures in-band
                         raise ProviderError(f"{self.name}: error in stream", kind="transient")
                     seen, last = True, chunk
                     usage = chunk.get("usage") or usage
@@ -117,7 +123,7 @@ class OpenAICompatProvider:
             raise self._network_error(exc) from exc
         if not seen:
             raise ProviderError(f"{self.name}: empty stream", kind="provider")
-        if not usage:                                    # keep the contract: the last chunk has `usage`
+        if not usage:  # keep the contract: the last chunk has `usage`
             prompt, done = estimate_prompt_tokens(request.messages), estimate_tokens("x" * reply_chars)
             yield {
                 "id": last.get("id") or f"chatcmpl-{uuid.uuid4().hex[:24]}",

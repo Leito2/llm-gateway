@@ -1,4 +1,5 @@
 """Deterministic provider for tests, demos and offline use. Only registered when GW_ENV is dev or test."""
+
 import asyncio
 import time
 import uuid
@@ -38,15 +39,24 @@ class MockProvider:
             "object": "chat.completion",
             "created": int(time.time()),
             "model": model,
-            "choices": [{"index": 0, "message": {"role": "assistant", "content": " ".join(words)},
-                         "finish_reason": finish}],
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": " ".join(words)},
+                    "finish_reason": finish,
+                }
+            ],
             "usage": usage,
         }
 
     async def stream(self, request: ChatCompletionRequest, model: str) -> AsyncIterator[dict]:
         words, finish, usage = self._reply(request)
-        base = {"id": f"chatcmpl-{uuid.uuid4().hex[:24]}", "object": "chat.completion.chunk",
-                "created": int(time.time()), "model": model}
+        base = {
+            "id": f"chatcmpl-{uuid.uuid4().hex[:24]}",
+            "object": "chat.completion.chunk",
+            "created": int(time.time()),
+            "model": model,
+        }
 
         def chunk(delta: dict, finish_reason: str | None = None, **extra) -> dict:
             choice = {"index": 0, "delta": delta, "finish_reason": finish_reason}
@@ -57,4 +67,4 @@ class MockProvider:
         for i, word in enumerate(words):
             await asyncio.sleep(self.token_delay_s)
             yield chunk({"content": word if i == 0 else " " + word})
-        yield chunk({}, finish, usage=usage)   # Provider contract: the last chunk carries `usage`
+        yield chunk({}, finish, usage=usage)  # Provider contract: the last chunk carries `usage`

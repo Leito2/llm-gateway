@@ -43,8 +43,10 @@ def test_a_key_registers_its_provider():
     assert not isinstance(providers["groq"], MockProvider)
 
 
-def test_paid_providers_are_never_registered_before_the_budget_exists():
-    assert "anthropic" not in build(env="dev", anthropic_api_key="k", run_budget_usd=3.0)
+def test_paid_providers_need_both_a_key_and_a_run_budget():
+    assert "anthropic" not in build(env="dev", anthropic_api_key="k", run_budget_usd=0.0)
+    assert "anthropic" not in build(env="dev", anthropic_api_key=None, run_budget_usd=3.0)
+    assert "anthropic" in build(env="dev", anthropic_api_key="k", run_budget_usd=3.0)
 
 
 def test_quotas_come_from_the_yaml():

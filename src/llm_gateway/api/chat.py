@@ -20,11 +20,12 @@ from llm_gateway.pricing.tokens import estimate_prompt_tokens
 from llm_gateway.providers.base import ProviderError
 from llm_gateway.resilience.admission import effective_priority
 from llm_gateway.resilience.breaker import CircuitBreaker
-from llm_gateway.resilience.executor import ChainFailed
+from llm_gateway.resilience.executor import ChainFailed, InvalidOutput
 from llm_gateway.resilience.singleflight import Flight, Shared, flight_key
 from llm_gateway.routing.resolver import usable_chain
 from llm_gateway.security.auth import require_client
 from llm_gateway.state import GatewayState
+from llm_gateway.structured.validate import InvalidSchema, build_validator
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -355,7 +356,21 @@ async def _serve(
 ) -> Response:
     chain = usable_chain(policy, gw.providers)
     max_tokens = policy.max_tokens if body.max_tokens is None else min(body.max_tokens, policy.max_tokens)
-    upstream = body.model_copy(update={"max_tokens": max_tokens})
+    try:
+        validator = build_validator(body.response_format)
+    except InvalidSchema as exc:
+        gw.stats.record(body.model, "-", 400)
+        raise GatewayError(
+            400, "invalid_request", str(exc), param="response_format", headers={"X-Request-Id": rid}
+        ) from exc
+    use_prompt_cache = policy.prompt_cache and request_headers.get("x-prompt-cache", "").lower() != "off"
+    upstream = body.model_copy(
+        update={
+            "max_tokens": max_tokens,
+            "prompt_cache": use_prompt_cache,  # whatever the client sent is overwritten
+            "reasoning_effort": clamp_effort(body.reasoning_effort, policy.effort),
+        }
+    )
     base_headers = {"X-Request-Id": rid, "X-Alias": body.model}
     if body.max_tokens is not None and body.max_tokens > policy.max_tokens:
         base_headers["X-Max-Tokens-Clamped"] = str(policy.max_tokens)
@@ -415,7 +430,6 @@ async def _serve(
     gate = None
     if gw.budget is not None and any(t.provider in gw.budget.paid for t in chain):
         cfg = gw.clients.get(client)
-        use_prompt_cache = policy.prompt_cache and request_headers.get("x-prompt-cache", "").lower() != "off"
         gate = gw.budget.gate(
             client, cfg.budget_usd_per_day, policy, prompt_tokens, max_tokens, use_prompt_cache
         )
@@ -425,9 +439,10 @@ async def _serve(
             policy=policy,
             chain=chain,
             request=upstream,
-            stream=body.stream,
+            stream=body.stream and validator is None,  # structured output is buffered, checked, then replayed
             quota_tokens=prompt_tokens + max_tokens,
             gate=gate,
+            validate=validator,
         )
     except ProviderError as exc:  # kind == "client": the request itself is invalid
         if flight:
@@ -449,6 +464,8 @@ async def _serve(
     if gate is not None and gate.skipped:
         headers["X-Budget-Skipped"] = ",".join(dict.fromkeys(gate.skipped))
     gw.stats.record(body.model, target.provider, 200)
+    meta = (attempt.completion if attempt.completion is not None else attempt.first or {}).pop("_meta", None)
+    headers.update(_meta_headers(meta))
     if attempt.completion is not None:
         if flight:
             flight.resolve(Shared(attempt.completion, label, attempt.depth))
@@ -456,7 +473,7 @@ async def _serve(
             gw.cache.store_later(creq, attempt.completion, label, degraded=target.degraded)
         if gate is None or not gate.is_paid(target):
             _book_free_cost(gw, client, target.provider, target.model, attempt.completion.get("usage"))
-        return JSONResponse(attempt.completion, headers=headers)
+        return await _respond(attempt.completion, body, headers, cleanups)
 
     async def finalize(ctx: StreamCtx) -> None:
         if attempt.reservation is not None:
@@ -504,6 +521,16 @@ def _chain_failure(gw: GatewayState, alias: str, rid: str, failed: ChainFailed) 
             type_="server_error",
             headers=headers,
         )
+    if isinstance(failed.last_error, InvalidOutput):
+        gw.stats.record(alias, failed.last_error.provider or "-", 502)
+        return GatewayError(
+            502,
+            "invalid_structured_output",
+            f"No provider produced output matching `response_format` for alias `{alias}`. "
+            f"Last problem: {failed.last_error}.",
+            type_="server_error",
+            headers=headers,
+        )
     if failed.skipped.get("budget") and not failed.tried and failed.last_error is None:
         gw.stats.record(alias, "-", 402)
         return GatewayError(
@@ -547,3 +574,29 @@ def _book_saving(gw: GatewayState, layer: str, provider_label: str, usage: dict 
     if parsed is not None:
         provider, _, model = provider_label.partition(":")
         gw.stats.record_saving(layer, reference_micro(gw.prices.price(provider, model), parsed))
+
+
+_EFFORT_RANK = {"low": 0, "medium": 1, "high": 2}
+
+
+def clamp_effort(requested: str | None, ceiling: str | None) -> str | None:
+    """The client's `reasoning_effort`, never above the alias's `effort` (ADR-0005). Alias unset: as asked."""
+    if ceiling is None:
+        return requested
+    if requested is None:
+        return ceiling
+    return min(requested, ceiling, key=_EFFORT_RANK.__getitem__)
+
+
+def _meta_headers(meta: dict | None) -> dict[str, str]:
+    """What a provider adapter or the executor wants the client to know, as X-* headers (PLAN §8.5)."""
+    out: dict[str, str] = {}
+    if not meta:
+        return out
+    if meta.get("params_dropped"):
+        out["X-Params-Dropped"] = ",".join(meta["params_dropped"])
+    if meta.get("structured_repaired"):
+        out["X-Structured-Repaired"] = "1"
+    if meta.get("effort"):
+        out["X-Effort"] = str(meta["effort"])
+    return out

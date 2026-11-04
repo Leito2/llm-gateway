@@ -1,4 +1,5 @@
 """The interface every provider adapter implements."""
+
 from collections.abc import AsyncIterator
 from typing import Literal, Protocol
 
@@ -12,13 +13,14 @@ ErrorKind = Literal["transient", "provider", "client"]
 class ProviderError(Exception):
     """Raised by adapters; `kind` tells the resilience layer whether to retry, fall back or give up."""
 
-    def __init__(self, message: str, *, kind: ErrorKind, status: int | None = None,
-                 retry_after: float | None = None) -> None:
+    def __init__(
+        self, message: str, *, kind: ErrorKind, status: int | None = None, retry_after: float | None = None
+    ) -> None:
         super().__init__(message)
         self.kind = kind
         self.status = status
-        self.retry_after = retry_after     # seconds, from the provider's Retry-After header
-        self.provider: str | None = None   # set by the resilience layer, which knows which link failed
+        self.retry_after = retry_after  # seconds, from the provider's Retry-After header
+        self.provider: str | None = None  # set by the resilience layer, which knows which link failed
 
 
 class Provider(Protocol):
