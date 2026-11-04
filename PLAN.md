@@ -590,7 +590,7 @@ llm-gateway/
 | Hito | Objetivo | Criterio de aceptación |
 |---|---|---|
 | **M0 · Bootstrap** ✅ | Repo, estructura, configs, CI, README esqueleto | Hecho en el setup inicial |
-| **M1 · Núcleo + mock + UI** | `/v1/chat/completions` (normal y streaming) con `MockProvider`, schemas OpenAI, health, `/stats`, headers `X-*`, **UI de chat** | El SDK oficial de OpenAI funciona contra el gateway (G7 parcial); la UI muestra streaming y headers |
+| **M1 · Núcleo + mock + UI** ✅ | `/v1/chat/completions` (normal y streaming) con `MockProvider`, schemas OpenAI, health, `/stats`, headers `X-*`, **UI de chat** | El SDK oficial de OpenAI funciona contra el gateway (G7 parcial); la UI muestra streaming y headers |
 | **M2 · Proveedores + routing** | `OpenAICompatProvider` (Groq, Google AI Studio y Ollama vía `/v1`, incl. fallback `gemma3:1b`), `ProviderError` con 3 tipos, `routes.yaml`, aliases, `allowed_aliases`, clamp de `max_tokens`, `allow_degraded`, cuotas salientes. Verificar streaming, `usage` y `response_format` de Ollama `/v1` | P1, P2 y P4 pueden apuntar al gateway con `fast` y `smart`; G15; R17–R19 |
 | **M3 · Resiliencia** | Timeouts por fase, reintentos, **breaker con 3 disparadores**, bulkhead fijo, fallback, singleflight, load shedding, apagado ordenado | G4, G8 parcial; R03, R04, R13, R14, R23 |
 | **M4 · Caché semántica** | Exacta + semántica obligatoria (namespace, umbral calibrado, guardas, verificador, tags, modo observación), `/v1/embeddings`, embedders `e5-small` (por defecto), EmbeddingGemma-300M y `nomic-embed-text` | **G6, G9 y G11 medidos**; R07–R09, R21 |

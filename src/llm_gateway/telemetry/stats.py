@@ -1,0 +1,22 @@
+"""In-memory request counters behind GET /stats (Prometheus metrics replace this in M8)."""
+import time
+from collections import Counter
+
+
+class Stats:
+    def __init__(self) -> None:
+        self.started = time.monotonic()
+        self._counts: Counter[tuple[str, str, int]] = Counter()
+
+    def record(self, alias: str, provider: str, status: int) -> None:
+        self._counts[(alias, provider, status)] += 1
+
+    def snapshot(self) -> dict:
+        return {
+            "uptime_s": round(time.monotonic() - self.started, 1),
+            "requests_total": sum(self._counts.values()),
+            "requests": [
+                {"alias": a, "provider": p, "status": s, "count": n}
+                for (a, p, s), n in sorted(self._counts.items())
+            ],
+        }

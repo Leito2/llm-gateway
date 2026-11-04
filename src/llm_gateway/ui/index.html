@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>llm-gateway</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --ink: #1d2330; --muted: #5b6475; --rule: #d5d9e0;
+    --accent: #2f5d8a; --accent-ink: #fff; --user: #eaf1f8; --err: #b3261e; --err-bg: #fdecea; --pill: #eef0f4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171d; --panel: #1c2028; --ink: #e6e9ef; --muted: #9aa3b2; --rule: #323846;
+      --accent: #6ea4d8; --accent-ink: #10151c; --user: #232b38; --err: #ff8a80; --err-bg: #3a1f1d; --pill: #272d38;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; }
+  header { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--rule); }
+  header h1 { font-size: 16px; margin: 0 8px 0 0; }
+  input, select, textarea, button { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--rule); border-radius: 6px; padding: 6px 10px; }
+  button { cursor: pointer; background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button.secondary { background: var(--bg); color: var(--ink); border-color: var(--rule); }
+  #key { width: 220px; }
+  main { flex: 1; display: flex; min-height: 0; }
+  #chat { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .msg { max-width: 780px; }
+  .msg .body { white-space: pre-wrap; overflow-wrap: anywhere; padding: 8px 12px; border-radius: 8px; background: var(--panel); border: 1px solid var(--rule); }
+  .msg.user .body { background: var(--user); }
+  .msg .body.error { color: var(--err); background: var(--err-bg); border-color: var(--err); }
+  .msg .body.cursor::after { content: "▍"; animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .pills { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  .pill { font: 12px/1.6 ui-monospace, Consolas, monospace; background: var(--pill); color: var(--muted); border-radius: 10px; padding: 0 8px; }
+  .pill.warn { color: var(--err); }
+  form { display: flex; gap: 8px; padding: 12px 16px; background: var(--panel); border-top: 1px solid var(--rule); }
+  textarea { flex: 1; resize: none; height: 56px; }
+  aside { width: 260px; padding: 16px; background: var(--panel); border-left: 1px solid var(--rule); overflow-y: auto; font-size: 13px; }
+  aside h2 { font-size: 13px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  aside table { width: 100%; border-collapse: collapse; }
+  aside td { padding: 2px 0; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+  aside td:last-child { text-align: right; }
+  @media (max-width: 760px) { aside { display: none; } #key { width: 150px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>llm-gateway</h1>
+  <input id="key" type="password" placeholder="API key" autocomplete="off" aria-label="API key">
+  <select id="alias" aria-label="Alias"></select>
+  <button id="clear" class="secondary" type="button">Clear</button>
+</header>
+<main>
+  <section id="chat">
+    <div id="log" aria-live="polite"></div>
+    <form id="form">
+      <textarea id="input" placeholder="Message — Enter to send, Shift+Enter for a new line" aria-label="Message"></textarea>
+      <button id="send" type="submit">Send</button>
+    </form>
+  </section>
+  <aside>
+    <h2>Requests</h2>
+    <div id="stats">…</div>
+  </aside>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+const keyEl = $('#key'), aliasEl = $('#alias'), logEl = $('#log'), inputEl = $('#input'), sendEl = $('#send'), statsEl = $('#stats');
+let history = [], ctrl = null;
+
+// The page ships no key. What the user pastes lives in sessionStorage and goes away with the tab.
+try { keyEl.value = sessionStorage.getItem('gw_key') || ''; } catch (e) {}
+keyEl.addEventListener('input', () => { try { sessionStorage.setItem('gw_key', keyEl.value); } catch (e) {} });
+const authHeaders = () => (keyEl.value ? { Authorization: 'Bearer ' + keyEl.value } : {});
+
+// Everything from the network goes in with textContent, never innerHTML.
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+
+function addMessage(role) {
+  const box = el('div', 'msg ' + role), body = el('div', 'body'), pills = el('div', 'pills');
+  box.append(body, pills);
+  logEl.append(box);
+  logEl.scrollTop = logEl.scrollHeight;
+  return { body, pills };
+}
+
+function pill(pills, text, warn) { pills.append(el('span', 'pill' + (warn ? ' warn' : ''), text)); }
+
+function headerPills(h, pills) {
+  const show = (name, label, warn) => { const v = h.get(name); if (v) pill(pills, label + v, warn); };
+  show('X-Alias', 'alias ');
+  show('X-Gateway-Provider', '');
+  show('X-Gateway-Fallback-Depth', 'tried ');
+  const layer = h.get('X-Cache-Layer');
+  if (layer) pill(pills, 'cache ' + layer + (h.get('X-Cache-Similarity') ? ' ' + h.get('X-Cache-Similarity') : ''));
+  show('X-Max-Tokens-Clamped', 'max_tokens clamped to ', true);
+  show('X-Params-Dropped', 'dropped ', true);
+  show('X-Budget-Skipped', 'budget skipped ', true);
+}
+
+async function errorMessage(r) {
+  try { const j = await r.json(); return (j.error && j.error.message) || r.status + ' ' + r.statusText; }
+  catch (e) { return r.status + ' ' + r.statusText; }
+}
+
+function setBusy(busy) {
+  sendEl.textContent = busy ? 'Stop' : 'Send';
+  sendEl.type = busy ? 'button' : 'submit';
+}
+
+async function sendMessage() {
+  const text = inputEl.value.trim();
+  if (!text) return;
+  inputEl.value = '';
+  history.push({ role: 'user', content: text });
+  addMessage('user').body.textContent = text;
+  const out = addMessage('assistant');
+  out.body.classList.add('cursor');
+  ctrl = new AbortController();
+  setBusy(true);
+  const t0 = performance.now();
+  let ttft = null, reply = '', usage = null, done = false, outcome = 'ok';
+  try {
+    const r = await fetch('/v1/chat/completions', {
+      method: 'POST', signal: ctrl.signal,
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ model: aliasEl.value, messages: history, stream: true, stream_options: { include_usage: true } }),
+    });
+    headerPills(r.headers, out.pills);
+    if (!r.ok) throw new Error(await errorMessage(r));
+    const reader = r.body.getReader(), dec = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { done: eof, value } = await reader.read();
+      if (eof) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const event = buf.slice(0, i);
+        buf = buf.slice(i + 2);
+        for (const line of event.split('\n')) {
+          if (!line.startsWith('data:')) continue;       // ": ping" comments are ignored
+          const data = line.slice(5).trim();
+          if (data === '[DONE]') { done = true; continue; }
+          const obj = JSON.parse(data);
+          if (obj.error) throw new Error(obj.error.message || obj.error.code || 'stream error');
+          if (obj.usage) usage = obj.usage;
+          const delta = obj.choices && obj.choices[0] && obj.choices[0].delta && obj.choices[0].delta.content;
+          if (delta) {
+            if (ttft === null) ttft = performance.now() - t0;
+            reply += delta;
+            out.body.textContent = reply;
+            logEl.scrollTop = logEl.scrollHeight;
+          }
+        }
+      }
+    }
+    if (!done) throw new Error('the stream ended without [DONE]: the answer is incomplete');
+    history.push({ role: 'assistant', content: reply });
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      outcome = 'stopped';
+      if (reply) history.push({ role: 'assistant', content: reply }); else history.pop();
+    } else {
+      outcome = 'error';
+      history.pop();                                     // let the user retry without a duplicate turn
+      out.body.classList.add('error');
+      out.body.textContent = (reply ? reply + '\n' : '') + '⚠ ' + e.message;
+    }
+  } finally {
+    out.body.classList.remove('cursor');
+    if (ttft !== null) pill(out.pills, 'ttft ' + Math.round(ttft) + ' ms');
+    pill(out.pills, 'total ' + Math.round(performance.now() - t0) + ' ms');
+    if (usage) pill(out.pills, usage.prompt_tokens + ' in / ' + usage.completion_tokens + ' out tokens');
+    if (outcome === 'stopped') pill(out.pills, 'stopped', true);
+    ctrl = null;
+    setBusy(false);
+    refreshStats();
+    inputEl.focus();
+  }
+}
+
+async function refreshStats() {
+  try {
+    const r = await fetch('/stats', { headers: authHeaders() });
+    if (!r.ok) { statsEl.textContent = 'stats: ' + r.status; return; }
+    const s = await r.json();
+    const t = el('table');
+    for (const row of s.requests) {
+      const tr = el('tr');
+      tr.append(el('td', '', row.alias + ' · ' + row.provider + ' · ' + row.status), el('td', '', String(row.count)));
+      t.append(tr);
+    }
+    statsEl.replaceChildren(el('div', '', s.requests_total + ' total · up ' + Math.round(s.uptime_s) + ' s'), t);
+  } catch (e) { statsEl.textContent = 'stats unavailable'; }
+}
+
+async function loadAliases() {
+  try {
+    const r = await fetch('/v1/models');
+    const ids = (await r.json()).data.map((m) => m.id);
+    for (const id of ids) aliasEl.append(el('option', '', id));
+    if (ids.includes('fast')) aliasEl.value = 'fast';
+  } catch (e) { aliasEl.append(el('option', '', 'fast')); }
+}
+
+$('#form').addEventListener('submit', (ev) => { ev.preventDefault(); if (!ctrl) sendMessage(); });
+sendEl.addEventListener('click', () => { if (ctrl) ctrl.abort(); });        // the button reads "Stop" while streaming
+inputEl.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); if (!ctrl) sendMessage(); }
+});
+$('#clear').addEventListener('click', () => { if (ctrl) ctrl.abort(); history = []; logEl.replaceChildren(); });
+
+loadAliases();
+refreshStats();
+</script>
+</body>
+</html>

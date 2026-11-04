@@ -14,10 +14,15 @@ class ResponseFormat(BaseModel):
     json_schema: dict[str, Any] | None = None
 
 
+class StreamOptions(BaseModel):
+    include_usage: bool = False
+
+
 class ChatCompletionRequest(BaseModel):
     model: str = Field(description="An alias from routes.yaml, e.g. 'fast', 'smart', 'judge'")
     messages: list[ChatMessage] = Field(min_length=1)
     stream: bool = False
+    stream_options: StreamOptions | None = None
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     max_tokens: int | None = Field(default=None, gt=0)
     response_format: ResponseFormat | None = None

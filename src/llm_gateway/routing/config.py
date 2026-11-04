@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 class Target(BaseModel):
     provider: str                       # key in config/providers.yaml
     model: str
+    degraded: bool = False              # low-quality last resort: never cached (PLAN §3.2)
 
 
 class AliasPolicy(BaseModel):
@@ -20,6 +21,7 @@ class AliasPolicy(BaseModel):
     cache: bool = False
     semantic_cache: bool = True         # mandatory by default (PLAN §6); opt-out per alias
     hedge: bool = False
+    allow_degraded: bool = True         # False: never fall back to a `degraded` link
     priority: Literal["interactive", "batch"] = "interactive"
 
 

@@ -14,7 +14,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install
-        run: uv sync --all-packages --dev
+        run: uv sync --locked --all-packages --dev
       - name: Lint
         run: uv run ruff check .
       - name: Test

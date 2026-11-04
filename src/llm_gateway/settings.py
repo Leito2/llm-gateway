@@ -1,5 +1,6 @@
 """Runtime settings (environment variables, prefix GW_)."""
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -7,6 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="GW_", env_file=".env", extra="ignore")
 
+    env: Literal["dev", "test", "prod"] = "dev"   # the mock provider only exists in dev and test
     routes_file: Path = Path("config/routes.yaml")
     prices_file: Path = Path("config/prices.yaml")
     providers_file: Path = Path("config/providers.yaml")
