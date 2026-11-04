@@ -55,6 +55,7 @@ class StreamCtx:
         cleanups: list[Callable[[], None]],
         deadline: float | None = None,
         stall_s: float = 0.0,
+        ping_s: float = 0.0,
         clock: Callable[[], float] = time.monotonic,
         stop: asyncio.Future | None = None,
         breaker: CircuitBreaker | None = None,
@@ -66,6 +67,7 @@ class StreamCtx:
     ) -> None:
         self.include_usage, self.rest, self.cleanups = include_usage, rest, cleanups
         self.deadline, self.stall_s, self.clock, self.stop = deadline, stall_s, clock, stop
+        self.ping_s = ping_s  # keep-alive comment every `ping_s` of silence; 0 = never
         self.breaker, self.flight, self.label, self.depth = breaker, flight, label, depth
         self.shared: Shared | None = None  # set when the stream ended cleanly
         self.on_complete = on_complete  # gets the full answer of a clean stream (cache write-back)
@@ -135,6 +137,33 @@ async def _next_chunk(ctx: StreamCtx) -> dict | None:
         raise _StreamAbort("upstream_error", str(exc), blame_provider=True) from exc
 
 
+_PING = object()
+
+
+async def _chunks_or_pings(ctx: StreamCtx) -> AsyncIterator[dict | None | object]:
+    """Yields `_PING` for every `ping_s` the provider stays silent, then the next chunk (None: stream over).
+
+    The wait runs in its own task: `asyncio.wait` with a timeout leaves the task alone, whereas cancelling
+    `anext()` on the provider's async generator would kill it (R10). Thinking events that carry no text still
+    reach `_next_chunk`, so they reset the stall timer even though the client sees only the pings."""
+    if not ctx.ping_s or ctx.deadline is None:  # replays have no upstream to wait for
+        yield await _next_chunk(ctx)
+        return
+    task = asyncio.ensure_future(_next_chunk(ctx))
+    try:
+        while True:
+            done, _ = await asyncio.wait({task}, timeout=ctx.ping_s)
+            if done:
+                break
+            yield _PING
+        yield task.result()
+    finally:
+        if not task.done():  # the client left while we waited: stop the upstream read
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
+
+
 async def _event_stream(first: dict, ctx: StreamCtx) -> AsyncIterator[str]:
     """Chunks as SSE. `usage` travels in the provider's last chunk; clients only get it when they ask."""
     usage, last, finish, text = None, first, None, []
@@ -151,7 +180,12 @@ async def _event_stream(first: dict, ctx: StreamCtx) -> AsyncIterator[str]:
                 finish = choice.get("finish_reason") or finish
             if chunk.get("choices"):
                 yield _sse(chunk)
-            chunk = await _next_chunk(ctx)
+            chunk = None
+            async for item in _chunks_or_pings(ctx):
+                if item is _PING:
+                    yield ": ping\n\n"
+                else:
+                    chunk = item
         meta = {
             "id": last.get("id", ""),
             "created": last.get("created", int(time.time())),
@@ -437,6 +471,7 @@ async def _serve(
         cleanups=[*cleanups, attempt.lease.close],
         deadline=attempt.deadline,
         stall_s=policy.stall_timeout_s,
+        ping_s=gw.settings.stream_ping_s,
         stop=gw.lifecycle.stop,
         breaker=attempt.breaker,
         flight=flight,
