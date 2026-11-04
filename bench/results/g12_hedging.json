@@ -1,0 +1,32 @@
+{
+  "scenario": {
+    "fast_ms": 20.0,
+    "slow_ms": 1000.0,
+    "slow_rate": 0.05,
+    "hedge_delay_s": 0.08
+  },
+  "without_hedging": {
+    "hedge": false,
+    "success": 1500,
+    "mean_ms": 85.9,
+    "p50_ms": 29.6,
+    "p95_ms": 988.6,
+    "p99_ms": 1015.5,
+    "hedges_launched": 0,
+    "hedge_rate": 0.0,
+    "hedges_won": 0
+  },
+  "with_hedging": {
+    "hedge": true,
+    "success": 1500,
+    "mean_ms": 41.1,
+    "p50_ms": 40.0,
+    "p95_ms": 94.2,
+    "p99_ms": 131.4,
+    "hedges_launched": 98,
+    "hedge_rate": 0.065,
+    "hedges_won": 87
+  },
+  "p99_improvement_x": 7.73,
+  "pass": true
+}

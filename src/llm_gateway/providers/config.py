@@ -18,6 +18,8 @@ class ProviderSpec(BaseModel):
     quotas: QuotaSpec = Field(default_factory=QuotaSpec)
     concurrency: int | None = Field(default=None, gt=0)
     paid: bool = False
+    adaptive: bool = False  # AIMD: `concurrency` becomes the maximum and moves down under congestion
+    min_concurrency: int = Field(default=1, gt=0)
 
 
 class ProvidersConfig(BaseModel):

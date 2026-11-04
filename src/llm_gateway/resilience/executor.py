@@ -21,6 +21,7 @@ from llm_gateway.resilience.breaker import BreakerRegistry, CircuitBreaker, Stat
 from llm_gateway.resilience.bulkhead import Bulkhead
 from llm_gateway.resilience.retry import backoff_s
 from llm_gateway.routing.config import AliasPolicy, Target
+from llm_gateway.routing.latency import MIN_SAMPLES_FOR_HEDGE, LatencyTracker
 from llm_gateway.structured.validate import OutputValidator, merge_usage, repair_request
 from llm_gateway.telemetry.tracing import Tracer
 
@@ -59,6 +60,7 @@ class Attempt:
     gate: BudgetGate | None = None
     reservation: Reservation | None = None  # streams: the caller settles it when the stream ends
     extra_calls: int = 0  # provider calls beyond the first (a structured-output repair)
+    hedge: str | None = None  # 'won' when the hedged link answered first, 'primary' when the first link did
 
 
 class InvalidOutput(ProviderError):
@@ -88,6 +90,8 @@ class Executor:
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
     rng: random.Random = field(default_factory=random.Random)
     tracer: Tracer | None = None  # one span per provider attempt, when tracing is on
+    latency: LatencyTracker | None = None  # EWMA of time to first token per provider
+    on_hedge: Callable[[str], None] | None = None  # 'launched' | 'won' | 'lost', for metrics
 
     async def run(
         self,
@@ -101,7 +105,124 @@ class Executor:
         validate: OutputValidator | None = None,
     ) -> Attempt:
         """First link that answers. Raises ProviderError(kind="client") as is, ChainFailed otherwise."""
-        deadline = self.clock() + policy.total_timeout_s
+        kw = dict(
+            policy=policy, request=request, quota_tokens=quota_tokens, stream=stream, gate=gate,
+            validate=validate, deadline=self.clock() + policy.total_timeout_s,
+        )  # fmt: skip
+        delay = self._hedge_delay(policy, chain) if len(chain) > 1 else None
+        if delay is None:
+            return await self._run(chain=chain, **kw)
+        return await self._run_hedged(delay, chain, kw)
+
+    # --- hedging (stretch, ADR-12) --------------------------------------------------------------
+
+    def _hedge_delay(self, policy: AliasPolicy, chain: list[Target]) -> float | None:
+        """How long the first link may stay silent before the next one is raced. None: do not hedge."""
+        if not policy.hedge:
+            return None
+        if policy.hedge_delay_s is not None:
+            return policy.hedge_delay_s
+        tracker = self.latency
+        first = chain[0].provider
+        if tracker is None or tracker.samples(first) < MIN_SAMPLES_FOR_HEDGE:
+            return None  # not enough history to know what "slow" means for this provider
+        typical = tracker.ewma(first) or 0.0
+        return min(max(3 * typical, 0.05), 0.8 * policy.ttft_timeout_s)
+
+    async def _run_hedged(self, delay: float, chain: list[Target], kw: dict) -> Attempt:
+        """First link alone for `delay`; if it is still silent, race the second. First answer wins and the
+        loser is cancelled. Both are tried only up to the first token (ADR-4), so nothing was emitted yet."""
+        primary = asyncio.ensure_future(self._run(chain=chain[:1], **kw))
+        done, _ = await asyncio.wait({primary}, timeout=delay)
+        failures: list[ChainFailed] = []
+        if done:
+            try:
+                return primary.result()
+            except ChainFailed as exc:  # failed fast: ordinary fallback, no race
+                return await self._continue(chain, 1, [exc], kw)
+        hedge = asyncio.ensure_future(self._run(chain=chain[1:2], depth_offset=1, **kw))
+        self._notify("launched")
+        racers = {primary, hedge}
+        try:
+            while racers:
+                finished, racers = await asyncio.wait(racers, return_when=asyncio.FIRST_COMPLETED)
+                for task in finished:
+                    exc = task.exception()
+                    if exc is None:
+                        winner = task.result()
+                        await self._cancel_all(racers)
+                        for other in finished - {task}:  # both finished in the same tick: drop the loser
+                            if other.exception() is None:
+                                await self._discard(other.result())
+                        if task is hedge:
+                            winner.hedge = "won"
+                            self.breakers.get(chain[0].provider).record_success(slow=True)
+                            self._notify("won")
+                        else:
+                            winner.hedge = "primary"
+                            self._notify("lost")
+                        return winner
+                    if isinstance(exc, ChainFailed):
+                        failures.append(exc)
+                    else:  # a client error or a bug: no point in waiting for the other link
+                        await self._cancel_all(racers)
+                        raise exc
+        except BaseException:
+            await self._cancel_all({primary, hedge})
+            raise
+        return await self._continue(chain, 2, failures, kw)
+
+    async def _continue(
+        self, chain: list[Target], start: int, failures: list[ChainFailed], kw: dict
+    ) -> Attempt:
+        """The links not yet tried, one at a time. Earlier errors are merged into the final failure."""
+        try:
+            return await self._run(chain=chain[start:], depth_offset=start, **kw)
+        except ChainFailed as last:
+            merged = {
+                k: last.skipped.get(k, 0) + sum(f.skipped.get(k, 0) for f in failures) for k in last.skipped
+            }
+            raise ChainFailed(
+                last_error=last.last_error
+                or next((f.last_error for f in reversed(failures) if f.last_error), None),
+                tried=last.tried + sum(f.tried for f in failures),
+                timed_out=last.timed_out or any(f.timed_out for f in failures),
+                skipped=merged,
+            ) from last
+
+    def _notify(self, outcome: str) -> None:
+        if self.on_hedge:
+            self.on_hedge(outcome)
+
+    @staticmethod
+    async def _cancel_all(tasks: set[asyncio.Future]) -> None:
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    @staticmethod
+    async def _discard(attempt: Attempt) -> None:
+        """An answer nobody will use (the race had two finishers): release everything it holds."""
+        if attempt.stream is not None:
+            await _aclose(attempt.stream)
+        attempt.lease.close()
+        if attempt.gate is not None and attempt.reservation is not None:
+            await attempt.gate.settle(attempt.reservation, None)
+
+    async def _run(
+        self,
+        *,
+        policy: AliasPolicy,
+        chain: list[Target],
+        request: ChatCompletionRequest,
+        quota_tokens: int,
+        stream: bool,
+        gate: BudgetGate | None,
+        validate: OutputValidator | None,
+        deadline: float,
+        depth_offset: int = 0,
+    ) -> Attempt:
         attempts = tried = 0
         last_error: ProviderError | None = None
         skipped = {"breaker": 0, "quota": 0, "bulkhead": 0, "budget": 0}
@@ -151,7 +272,7 @@ class Executor:
                         target,
                         breaker,
                         lease,
-                        tried,
+                        tried + depth_offset,
                         deadline,
                         policy,
                         request,
@@ -178,6 +299,8 @@ class Executor:
                         link_usage = exc.usage
                     else:
                         breaker.record_failure()
+                    if exc.status in (429, 408):
+                        self.bulkhead.feedback(name, True)  # AIMD: the provider is struggling, shrink
                     if exc.status == 429:
                         self.quotas.block(name, exc.retry_after or BLOCK_AFTER_429_S)
                     log.warning("provider %s failed (%s): %s", name, exc.kind, exc)
@@ -273,6 +396,7 @@ class Executor:
                     f"{target.provider}: no answer within {remaining:.1f}s", kind="transient", status=408
                 ) from exc
             breaker.record_success()
+            self._observe(target.provider, self.clock() - started)
             lease.close()
             if problem is not None:
                 raise InvalidOutput(
@@ -298,8 +422,17 @@ class Executor:
         except BaseException:
             await _aclose(gen)
             raise
-        breaker.record_success(slow=self.clock() - started > SLOW_FRACTION * policy.ttft_timeout_s)
+        ttft = self.clock() - started
+        slow = ttft > SLOW_FRACTION * policy.ttft_timeout_s
+        breaker.record_success(slow=slow)
+        self._observe(target.provider, ttft, congested=slow)
         return Attempt(target, depth, breaker, lease, deadline, first=first, stream=gen)
+
+    def _observe(self, provider: str, seconds: float, congested: bool = False) -> None:
+        """A successful call: feed the latency EWMA (hedge delay, reordering) and the adaptive bulkhead."""
+        if self.latency is not None:
+            self.latency.record(provider, seconds)
+        self.bulkhead.feedback(provider, congested)
 
 
 async def _release(

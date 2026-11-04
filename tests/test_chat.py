@@ -9,7 +9,7 @@ MSG = [{"role": "user", "content": "hola mundo"}]
 
 
 def sse_data(text: str) -> list[str]:
-    return [line[len("data: "):] for line in text.splitlines() if line.startswith("data: ")]
+    return [line[len("data: ") :] for line in text.splitlines() if line.startswith("data: ")]
 
 
 def test_req_01_response_shape_and_headers():
@@ -54,8 +54,10 @@ def test_req_19_max_tokens_is_clamped_to_the_alias_cap():
 
 def test_max_tokens_reaches_the_provider():
     long_text = " ".join(["palabra"] * 600)
-    r = make_client().post("/v1/chat/completions", json={"model": "fast", "messages": [
-        {"role": "user", "content": long_text}], "max_tokens": 4000})
+    r = make_client().post(
+        "/v1/chat/completions",
+        json={"model": "fast", "messages": [{"role": "user", "content": long_text}], "max_tokens": 4000},
+    )
     choice = r.json()["choices"][0]
     assert choice["finish_reason"] == "length"
     assert r.json()["usage"]["completion_tokens"] == 256
@@ -90,15 +92,19 @@ def test_stream_is_sse_with_done_and_matches_the_non_stream_answer():
     assert events[-1] == "[DONE]"
     chunks = [json.loads(e) for e in events[:-1]]
     assert all(ch["object"] == "chat.completion.chunk" for ch in chunks)
-    assert "".join(ch["choices"][0]["delta"].get("content", "") for ch in chunks) == \
-        plain["choices"][0]["message"]["content"]
+    assert (
+        "".join(ch["choices"][0]["delta"].get("content", "") for ch in chunks)
+        == plain["choices"][0]["message"]["content"]
+    )
     assert chunks[-1]["choices"][0]["finish_reason"] == "stop"
-    assert all("usage" not in ch for ch in chunks)   # usage only when the client asks for it
+    assert all("usage" not in ch for ch in chunks)  # usage only when the client asks for it
 
 
 def test_stream_usage_chunk_only_with_include_usage():
-    r = make_client().post("/v1/chat/completions", json={
-        "model": "fast", "messages": MSG, "stream": True, "stream_options": {"include_usage": True}})
+    r = make_client().post(
+        "/v1/chat/completions",
+        json={"model": "fast", "messages": MSG, "stream": True, "stream_options": {"include_usage": True}},
+    )
     chunks = [json.loads(e) for e in sse_data(r.text)[:-1]]
     assert chunks[-1]["choices"] == [] and chunks[-1]["usage"]["completion_tokens"] > 0
     assert all("usage" not in ch for ch in chunks[:-1])
@@ -131,7 +137,9 @@ def test_stats_counts_requests_without_client_controlled_labels():
     stats = c.get("/stats").json()
     assert stats["requests_total"] == 2
     assert {(r["alias"], r["provider"], r["status"]) for r in stats["requests"]} == {
-        ("fast", "mock", 200), ("unknown", "-", 404)}
+        ("fast", "mock", 200),
+        ("unknown", "-", 404),
+    }
 
 
 def test_ui_is_served_with_a_restrictive_csp():

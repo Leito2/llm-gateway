@@ -1,4 +1,5 @@
 """Contract test (G7, partial): the official OpenAI SDK works against the gateway unchanged."""
+
 import openai
 import pytest
 from helpers import FULL_KEY, make_client
@@ -19,8 +20,12 @@ def test_chat_completion(sdk):
 
 
 def test_streaming_with_usage(sdk):
-    stream = sdk.chat.completions.create(model="smart", messages=[{"role": "user", "content": "uno dos"}],
-                                         stream=True, stream_options={"include_usage": True})
+    stream = sdk.chat.completions.create(
+        model="smart",
+        messages=[{"role": "user", "content": "uno dos"}],
+        stream=True,
+        stream_options={"include_usage": True},
+    )
     chunks = list(stream)
     text = "".join(c.choices[0].delta.content or "" for c in chunks if c.choices)
     assert text == "Mock reply to: uno dos"

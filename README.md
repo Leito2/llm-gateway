@@ -97,7 +97,7 @@ State lives in process memory (breakers, singleflight, in-memory cache) with **o
 | `cache/` | keys + namespaces, lexical guards, embedder protocol (hash, ONNX e5-small), in-memory backend, calibration harness |
 | `structured/` | JSON / JSON-Schema validation and repair |
 | `security/` | client keys, admin key, per-client rate limit |
-| `guardrails/` | size and shape limits (prompt-injection / PII guardrails are stretch) |
+| `guardrails/` | size and shape limits; regex injection / PII heuristics (stretch, a stand-in for Prompt Guard / Presidio) |
 | `telemetry/` | Prometheus metrics, JSON access log, OpenTelemetry tracing |
 
 ## Part III — Resilience and Cost Control in Depth
@@ -141,7 +141,8 @@ registered only when `GW_ANTHROPIC_API_KEY` is set **and** `GW_RUN_BUDGET_USD > 
 | G11 cost saved | ⏳ counters in place (`gw_cost_saved_usd_total`); needs a Zipf replay | — |
 | G13 throughput | ✅ measured ≈ 1,200 req/s | `bench/throughput.py` |
 | G15 quotas | ✅ | `tests/test_quotas_and_fallback.py` |
-| G12 hedging, G14 guardrails | stretch | see below |
+| G12 hedging | ✅ p99 1,015 ms → 131 ms (7.7×) for +6.5% extra calls | `bench/hedging.py` (local only) |
+| G14 guardrails | ⏳ heuristic stand-in; recall / false positives not measured | `guardrails/scan.py` |
 
 ### EARS traceability (PLAN §11)
 
@@ -256,7 +257,10 @@ made the rest mechanical; every EARS requirement has a test, and the real-uvicor
 - G9 (hit latency), G11 (cost saved on a Zipf replay) and the Toxiproxy chaos suite are not measured yet.
 - The Anthropic adapter is tested against fixtures written from the documented API, not against real streams.
 - The < 5 ms p95 overhead target was missed on the Windows test machine.
-- Presidio redaction is only a start-up guard; PII / prompt-injection guardrails are stretch items.
+- Presidio redaction is only a start-up guard. The injection / PII guardrail is a regex heuristic (default `monitor`),
+  not Prompt Guard 2 or Presidio, and G14 recall / false-positive rates are not measured.
+- Langfuse export was not built. Hot reload covers routes, client keys and prices, not providers or budget caps.
+- Hedging, EWMA reordering and the adaptive bulkhead are opt-in per alias / provider and tested in-process only.
 
 **Why not LiteLLM.** LiteLLM is the reference baseline (G2, optional). This project exists to own the failure semantics
 (atomic budget, guarded semantic cache, no retry after the first token) and to understand them end to end.

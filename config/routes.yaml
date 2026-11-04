@@ -1,5 +1,6 @@
-# Aliases requested by clients → ordered fallback chains. Providers with an open breaker or exhausted quota are skipped
-# (reordering by EWMA TTFT is stretch). Policy keys: PLAN §3.2, §4, §5, §6. `hedge` has no effect until hedging (stretch) exists.
+# Aliases requested by clients → ordered fallback chains. Providers with an open breaker or exhausted quota are skipped.
+# Policy keys: PLAN §3.2, §4, §5, §6. Stretch keys: `hedge: true` races the next link when the first is silent (`hedge_delay_s`, else 3x its EWMA TTFT once measured);
+# `reorder: ewma` sorts non-degraded links fastest first; `vision: true` lets the alias accept image_url parts.
 # `degraded: true` marks low-quality last resorts: never cached, and skipped by aliases with `allow_degraded: false`.
 # `mock` links are ignored unless GW_ENV is dev or test.
 # Free tiers (groq, google) cost $0 but have quotas (config/providers.yaml); only synthetic/public data or user-consented data (P4 vault excerpts) is sent to them.
@@ -46,6 +47,7 @@ aliases:
     priority: batch
     allow_degraded: false        # a golden judgment never silently comes from mock
   vision:                        # P4 multimodal fact-auditing (stretch)
+    vision: true                 # the only alias that accepts image_url parts
     chain:
       - { provider: google, model: "gemma-4-31b-it" }
       - { provider: mock, model: "mock-vision", degraded: true }

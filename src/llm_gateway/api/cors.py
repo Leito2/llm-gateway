@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 EXPOSED = [
     "X-Request-Id", "X-Alias", "X-Gateway-Provider", "X-Gateway-Fallback-Depth", "X-Gateway-Singleflight",
     "X-Cache-Layer", "X-Cache-Similarity", "X-Max-Tokens-Clamped", "X-Params-Dropped", "X-Effort",
-    "X-Structured-Repaired", "X-Budget-Skipped", "Retry-After",
+    "X-Structured-Repaired", "X-Budget-Skipped", "X-Guardrail-Flags", "Retry-After",
 ]  # fmt: skip
 
 
@@ -30,6 +30,7 @@ def install_cors(app: FastAPI, origins: str) -> None:
             "X-Cache-Scope",
             "X-Cache-Tags",
             "X-Prompt-Cache",
+            "X-Untrusted-Content",
             "X-Request-ID",
             "traceparent",
         ],

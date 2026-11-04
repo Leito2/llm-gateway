@@ -27,12 +27,15 @@ def counting_client(key: str | None) -> TestClient:
     return client
 
 
-@pytest.mark.parametrize("headers,code", [
-    ({}, "missing_api_key"),
-    ({"Authorization": "Bearer"}, "missing_api_key"),
-    ({"Authorization": "Basic abc"}, "missing_api_key"),
-    ({"Authorization": "Bearer gw_full_wrong"}, "invalid_api_key"),
-])
+@pytest.mark.parametrize(
+    "headers,code",
+    [
+        ({}, "missing_api_key"),
+        ({"Authorization": "Bearer"}, "missing_api_key"),
+        ({"Authorization": "Basic abc"}, "missing_api_key"),
+        ({"Authorization": "Bearer gw_full_wrong"}, "invalid_api_key"),
+    ],
+)
 def test_req_02_bad_or_missing_key_is_401_and_calls_no_provider(headers, code):
     client = counting_client(None)
     r = client.post("/v1/chat/completions", json=BODY, headers=headers)
@@ -81,8 +84,12 @@ def test_missing_clients_file_rejects_everything(tmp_path):
 
     from llm_gateway.main import create_app
     from llm_gateway.settings import Settings
-    app = create_app(Settings(_env_file=None, env="test", clients_file=tmp_path / "absent.yaml",
-                              providers_file=PROVIDERS_FILE))
+
+    app = create_app(
+        Settings(
+            _env_file=None, env="test", clients_file=tmp_path / "absent.yaml", providers_file=PROVIDERS_FILE
+        )
+    )
     headers = {"Authorization": f"Bearer {FULL_KEY}"}
     r = TestClient(app).post("/v1/chat/completions", json=BODY, headers=headers)
     assert r.status_code == 401
@@ -103,6 +110,7 @@ def test_unknown_alias_in_clients_file_stops_startup():
     from pathlib import Path
 
     from llm_gateway.routing.config import load_routes
+
     registry = ClientRegistry({"x": ClientConfig(key_sha256="b" * 64, allowed_aliases=["fats"])})
     with pytest.raises(ValueError, match="fats"):
         registry.check_routes(load_routes(Path("config/routes.yaml")))

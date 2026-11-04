@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from llm_gateway.api.errors import GatewayError
 from llm_gateway.cache.keys import parse_tags
+from llm_gateway.reload import reload_config
 from llm_gateway.security.admin import client_or_admin, require_admin
 
 router = APIRouter()
@@ -18,6 +19,7 @@ def stats(request: Request) -> dict:
         **gw.stats.snapshot(),
         "breakers": gw.breakers.snapshot(),
         "bulkheads": gw.bulkhead.snapshot(),
+        "latency": gw.latency.snapshot(),
         "in_flight": {
             "now": gw.admission.in_flight,
             "limit": gw.admission.limit,
@@ -27,6 +29,15 @@ def stats(request: Request) -> dict:
         "draining": gw.lifecycle.draining,
         "cache": gw.cache.snapshot() if gw.cache else None,
     }
+
+
+@router.post("/admin/reload", dependencies=[Depends(require_admin)])
+def reload(request: Request) -> dict:
+    """Re-read routes, clients and prices. Invalid files: 400, and the running configuration stays."""
+    try:
+        return {"reloaded": reload_config(request.app.state.gateway)}
+    except Exception as exc:  # noqa: BLE001 - yaml, pydantic and file errors all mean "rejected"
+        raise GatewayError(400, "invalid_config", f"Reload rejected, old configuration kept: {exc}") from exc
 
 
 class InvalidateRequest(BaseModel):

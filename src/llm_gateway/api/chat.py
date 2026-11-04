@@ -15,7 +15,8 @@ from starlette.background import BackgroundTask
 from llm_gateway.api.errors import GatewayError, request_id
 from llm_gateway.api.schemas import ChatCompletionRequest
 from llm_gateway.budget.service import estimate_emitted
-from llm_gateway.guardrails.size import check_shape
+from llm_gateway.guardrails.scan import Findings, scan
+from llm_gateway.guardrails.size import check_shape, count_images
 from llm_gateway.pricing.prices import Usage, reference_micro
 from llm_gateway.pricing.tokens import estimate_prompt_tokens
 from llm_gateway.providers.base import ProviderError
@@ -400,6 +401,20 @@ async def _chat(gw: GatewayState, body: ChatCompletionRequest, request: Request,
             cleanup()
 
 
+def _scan(gw: GatewayState, body: ChatCompletionRequest, headers: Mapping[str, str]) -> Findings | None:
+    """Injection/PII scan (stretch). `off` skips it; every finding is counted, `enforce` may then block."""
+    mode = gw.settings.guardrails_mode
+    if mode == "off":
+        return None
+    found = scan(body.messages, untrusted=headers.get("x-untrusted-content", "").lower() == "true")
+    if gw.metrics:
+        if found.injection:
+            gw.metrics.guardrails.labels("injection", "block" if mode == "enforce" else "flag").inc()
+        for _ in found.pii:
+            gw.metrics.guardrails.labels("pii", "flag").inc()
+    return found
+
+
 async def _serve(
     gw: GatewayState,
     body: ChatCompletionRequest,
@@ -410,6 +425,8 @@ async def _serve(
     request_headers: Mapping[str, str],
 ) -> Response:
     chain = usable_chain(policy, gw.providers)
+    if policy.reorder == "ewma":
+        chain = gw.latency.reorder(chain)
     max_tokens = policy.max_tokens if body.max_tokens is None else min(body.max_tokens, policy.max_tokens)
     try:
         validator = build_validator(body.response_format)
@@ -436,6 +453,27 @@ async def _serve(
         if gw.metrics:
             gw.metrics.guardrails.labels("size", "enforce").inc()
         raise GatewayError(400, broken[0], broken[1], param="messages", headers={"X-Request-Id": rid})
+    if count_images(body.messages) and not policy.vision:
+        gw.stats.record(body.model, "-", 400)
+        raise GatewayError(
+            400,
+            "images_not_supported",
+            f"Alias `{body.model}` does not take images; use an alias with vision (e.g. `vision`).",
+            param="messages",
+            headers={"X-Request-Id": rid},
+        )
+    findings = _scan(gw, body, request_headers)
+    if findings is not None and findings.flags:
+        base_headers["X-Guardrail-Flags"] = ",".join(findings.flags)
+        if findings.injection and gw.settings.guardrails_mode == "enforce":
+            gw.stats.record(body.model, "-", 400)
+            raise GatewayError(
+                400,
+                "guardrail_blocked",
+                "The request looks like a prompt-injection attempt.",
+                param="messages",
+                headers={"X-Request-Id": rid},
+            )
     prompt_tokens = estimate_prompt_tokens(body.messages)
     if policy.max_input_tokens is not None and prompt_tokens > policy.max_input_tokens:
         gw.stats.record(body.model, "-", 400)

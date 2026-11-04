@@ -60,7 +60,18 @@ class Metrics:
         self.rate_limited = Counter(
             "gw_rate_limited_total", "Requests over the client's rpm", ["client"], registry=r
         )
+        self.hedges = Counter(
+            "gw_hedges_total", "Hedged requests: launched, won (the second link answered first), lost",
+            ["outcome"], registry=r,
+        )  # fmt: skip
         # Read at scrape time from live state:
+        self.ttft_ewma = Gauge(
+            "gw_ttft_ewma_seconds", "Smoothed time to first token per provider", ["provider"], registry=r
+        )
+        self.bulkhead_limit = Gauge(
+            "gw_bulkhead_limit", "Concurrent calls allowed per provider (moves for adaptive ones)",
+            ["provider"], registry=r,
+        )  # fmt: skip
         self.breaker = Gauge("gw_breaker_state", "0 closed, 1 half-open, 2 open", ["provider"], registry=r)
         self.in_flight = Gauge("gw_in_flight", "Requests being served", registry=r)
         self.budget_remaining = Gauge("gw_budget_remaining_usd", "Budget left", ["scope"], registry=r)
@@ -70,6 +81,9 @@ class Metrics:
         self.cache_events = Gauge(
             "gw_cache_events", "Cache counters (shadow hits, writes, ...)", ["kind"], registry=r
         )
+
+    def hedges_hook(self, outcome: str) -> None:
+        self.hedges.labels(outcome).inc()
 
     # --- hooks --------------------------------------------------------------------------------
 
@@ -95,6 +109,10 @@ class Metrics:
         for name, snap in gw.breakers.snapshot().items():
             self.breaker.labels(name).set(_STATE_VALUE.get(State(snap["state"]), 0))
         self.in_flight.set(gw.admission.in_flight)
+        for name, snap in gw.latency.snapshot().items():
+            self.ttft_ewma.labels(name).set(snap["ewma_ttft_s"])
+        for name, snap in gw.bulkhead.snapshot().items():
+            self.bulkhead_limit.labels(name).set(snap["limit"])
         if gw.budget is not None:
             for kind, n in gw.budget.counters.items():
                 self.budget_events.labels(kind).set(n)

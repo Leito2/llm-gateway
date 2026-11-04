@@ -17,5 +17,11 @@ def estimate_tokens(text: str) -> int:
     return math.ceil(len(text) / 3)
 
 
+IMAGE_TOKENS = 800  # flat charge per image: providers bill 250-1600 depending on size; this errs high
+
+
 def estimate_prompt_tokens(messages: list[ChatMessage]) -> int:
-    return sum(estimate_tokens(content_text(m.content)) for m in messages)
+    images = sum(
+        1 for m in messages if isinstance(m.content, list) for p in m.content if p.get("type") == "image_url"
+    )
+    return sum(estimate_tokens(content_text(m.content)) for m in messages) + images * IMAGE_TOKENS

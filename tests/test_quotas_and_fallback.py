@@ -1,4 +1,5 @@
 """Outbound quotas (R13, G15) and the sequential fallback of M2."""
+
 from fastapi.testclient import TestClient
 from helpers import make_app, make_client
 
@@ -47,7 +48,7 @@ def test_limiter_rpm_refills_over_a_minute():
     clock = FakeClock()
     q = QuotaLimiter({"p": QuotaSpec(rpm=2)}, clock=clock)
     assert [q.try_acquire("p", 1) for _ in range(3)] == [True, True, False]
-    clock.now = 30.0           # half a minute gives back one request
+    clock.now = 30.0  # half a minute gives back one request
     assert q.try_acquire("p", 1) and not q.try_acquire("p", 1)
 
 
@@ -55,8 +56,8 @@ def test_limiter_tpm_takes_nothing_when_a_limit_fails():
     clock = FakeClock()
     q = QuotaLimiter({"p": QuotaSpec(rpm=10, tpm=100)}, clock=clock)
     assert q.try_acquire("p", 80)
-    assert not q.try_acquire("p", 80)        # tpm short
-    assert q.try_acquire("p", 20)            # the failed attempt did not consume a request or tokens
+    assert not q.try_acquire("p", 80)  # tpm short
+    assert q.try_acquire("p", 20)  # the failed attempt did not consume a request or tokens
 
 
 def test_limiter_rpd_resets_on_a_new_utc_day():
@@ -93,7 +94,7 @@ def test_req_03_transient_failure_falls_back_and_reports_the_depth():
     r = client.post("/v1/chat/completions", json=BODY)
     assert r.status_code == 200 and r.headers["x-gateway-provider"].startswith("mock:")
     assert r.headers["x-gateway-fallback-depth"] == "2"
-    assert groq.calls == 2        # a 5xx is retried once on the same link (PLAN §4.2) before falling back
+    assert groq.calls == 2  # a 5xx is retried once on the same link (PLAN §4.2) before falling back
 
 
 def test_provider_error_kind_also_falls_back_and_streaming_does_too():
@@ -110,7 +111,8 @@ def test_client_error_goes_back_to_the_client_and_no_other_provider_is_tried():
     r = client.post("/v1/chat/completions", json=BODY)
     assert r.status_code == 400 and r.json()["error"]["code"] == "invalid_request"
     assert groq.calls == 1 and ("fast", "mock", 200) not in {
-        (x["alias"], x["provider"], x["status"]) for x in app.state.gateway.stats.snapshot()["requests"]}
+        (x["alias"], x["provider"], x["status"]) for x in app.state.gateway.stats.snapshot()["requests"]
+    }
 
 
 def test_a_429_blocks_the_provider_for_later_requests():
@@ -118,7 +120,7 @@ def test_a_429_blocks_the_provider_for_later_requests():
     _, client = app_with(groq)
     for _ in range(3):
         assert client.post("/v1/chat/completions", json=BODY).status_code == 200
-    assert groq.calls == 1                      # the second and third request never tried it
+    assert groq.calls == 1  # the second and third request never tried it
 
 
 def test_503_when_every_link_fails_and_it_names_the_last_error_but_not_upstream_text():

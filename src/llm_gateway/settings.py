@@ -36,4 +36,5 @@ class Settings(BaseSettings):
     rate_limit_backend: Literal["memory", "redis"] = "memory"  # redis falls back to memory when it is down
     cors_origins: str = ""  # comma-separated origins (or *) allowed to call from a browser
     max_body_bytes: int = 8_000_000  # larger requests get 413 before parsing
-    guardrails_mode: str = "monitor"  # off | monitor | enforce
+    guardrails_mode: Literal["off", "monitor", "enforce"] = "monitor"  # injection/PII heuristics
+    reload_interval_s: float = 0.0  # >0: reload routes/clients/prices when their files change

@@ -28,7 +28,10 @@ class AliasPolicy(BaseModel):
     effort: Literal["low", "medium", "high"] | None = None  # Anthropic: upper bound for reasoning effort
     prompt_cache: bool = False  # mark the system prompt for the provider's prompt cache (Anthropic)
     semantic_scope: Literal["single", "last_turn"] = "single"  # last_turn: every user question stands alone
-    hedge: bool = False
+    hedge: bool = False  # race the next link when the first is slower than `hedge_delay_s` (stretch)
+    hedge_delay_s: float | None = Field(default=None, gt=0)  # default: 3x the provider's EWMA TTFT
+    reorder: Literal["none", "ewma"] = "none"  # ewma: fastest non-degraded link first (stretch)
+    vision: bool = False  # accepts image parts; other aliases answer 400 `images_not_supported`
     allow_degraded: bool = True  # False: never fall back to a `degraded` link
     priority: Literal["interactive", "batch"] = "interactive"
 

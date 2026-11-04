@@ -1,6 +1,6 @@
 """Dependencies shared by the request handlers (stored in `app.state.gateway`)."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import httpx
 
@@ -17,6 +17,7 @@ from llm_gateway.resilience.executor import Executor
 from llm_gateway.resilience.lifecycle import Lifecycle
 from llm_gateway.resilience.singleflight import Singleflight
 from llm_gateway.routing.config import RoutesConfig
+from llm_gateway.routing.latency import LatencyTracker
 from llm_gateway.security.clients import ClientRegistry
 from llm_gateway.security.ratelimit import RateLimiter
 from llm_gateway.settings import Settings
@@ -47,3 +48,4 @@ class GatewayState:
     metrics: Metrics | None = None
     ratelimit: RateLimiter | None = None
     tracer: Tracer | None = None
+    latency: LatencyTracker = field(default_factory=LatencyTracker)

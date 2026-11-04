@@ -22,6 +22,7 @@ from llm_gateway.pricing.prices import load_prices
 from llm_gateway.providers.config import load_providers
 from llm_gateway.providers.registry import HTTP_TIMEOUT, build_providers
 from llm_gateway.quotas.limiter import QuotaLimiter
+from llm_gateway.reload import watch
 from llm_gateway.resilience.admission import Admission
 from llm_gateway.resilience.breaker import BreakerRegistry
 from llm_gateway.resilience.bulkhead import Bulkhead
@@ -29,6 +30,7 @@ from llm_gateway.resilience.executor import Executor
 from llm_gateway.resilience.lifecycle import Lifecycle
 from llm_gateway.resilience.singleflight import Singleflight
 from llm_gateway.routing.config import load_routes
+from llm_gateway.routing.latency import LatencyTracker
 from llm_gateway.security.clients import load_clients
 from llm_gateway.security.ratelimit import RateLimiter
 from llm_gateway.settings import Settings
@@ -44,7 +46,12 @@ from llm_gateway.telemetry.tracing import build_tracer
 async def _lifespan(app: FastAPI):
     gw = app.state.gateway
     gw.lifecycle.attach(asyncio.get_running_loop())
+    watcher = None
+    if gw.settings.reload_interval_s > 0:
+        watcher = asyncio.create_task(watch(gw, gw.settings.reload_interval_s))
     yield
+    if watcher is not None:
+        watcher.cancel()
     if gw.cache is not None:
         await gw.cache.flush()
     await gw.http.aclose()
@@ -92,7 +99,16 @@ def create_app(settings: Settings | None = None, tracer_provider=None) -> FastAP
     )
     tracer = build_tracer(settings.otel_endpoint, tracer_provider)
     bulkhead = Bulkhead(
-        {name: spec.concurrency for name, spec in provider_config.providers.items() if spec.concurrency}
+        {name: spec.concurrency for name, spec in provider_config.providers.items() if spec.concurrency},
+        adaptive={
+            name: spec.min_concurrency
+            for name, spec in provider_config.providers.items()
+            if spec.concurrency and spec.adaptive
+        },
+    )
+    latency = LatencyTracker()
+    executor = Executor(
+        providers, breakers, bulkhead, quotas, tracer=tracer, latency=latency, on_hedge=metrics.hedges_hook
     )
 
     app = FastAPI(title="llm-gateway", version=__version__, lifespan=_lifespan)
@@ -109,7 +125,7 @@ def create_app(settings: Settings | None = None, tracer_provider=None) -> FastAP
         admission=Admission(settings.max_in_flight),
         singleflight=Singleflight(),
         lifecycle=Lifecycle(settings.drain_timeout_s),
-        executor=Executor(providers, breakers, bulkhead, quotas, tracer=tracer),
+        executor=executor,
         embedder=embedder,
         cache=cache,
         prices=prices,
@@ -117,6 +133,7 @@ def create_app(settings: Settings | None = None, tracer_provider=None) -> FastAP
         metrics=metrics,
         ratelimit=_build_ratelimit(settings),
         tracer=tracer,
+        latency=latency,
     )
     install_error_handlers(app)
     app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_body_bytes)

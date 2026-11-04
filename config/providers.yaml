@@ -6,7 +6,7 @@ providers:
   ollama:
     kind: ollama
     base_url_env: GW_OLLAMA_BASE_URL
-    concurrency: 2               # 4 GB VRAM: adaptive limiter starts here
+    concurrency: 2               # 4 GB VRAM: fixed. Add `adaptive: true` (+ `min_concurrency`) to let AIMD move it
   groq:
     kind: openai_compat
     base_url: "https://api.groq.com/openai/v1"

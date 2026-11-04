@@ -1,4 +1,5 @@
 """OpenAICompatProvider against a fake HTTP server (httpx.MockTransport): no network, no quota."""
+
 import json
 
 import httpx
@@ -9,10 +10,14 @@ from llm_gateway.providers.base import ProviderError
 from llm_gateway.providers.openai_compat import OpenAICompatProvider
 
 REQ = ChatCompletionRequest(model="fast", messages=[{"role": "user", "content": "hola mundo"}], max_tokens=50)
-COMPLETION = {"id": "x", "object": "chat.completion", "created": 1, "model": "m",
-              "choices": [{"index": 0, "message": {"role": "assistant", "content": "hello"},
-                           "finish_reason": "stop"}],
-              "usage": {"prompt_tokens": 3, "completion_tokens": 1, "total_tokens": 4}}
+COMPLETION = {
+    "id": "x",
+    "object": "chat.completion",
+    "created": 1,
+    "model": "m",
+    "choices": [{"index": 0, "message": {"role": "assistant", "content": "hello"}, "finish_reason": "stop"}],
+    "usage": {"prompt_tokens": 3, "completion_tokens": 1, "total_tokens": 4},
+}
 
 
 def provider(handler, api_key="secret") -> OpenAICompatProvider:
@@ -25,8 +30,14 @@ def sse(*chunks: dict | str) -> bytes:
 
 
 def delta(text: str, **extra) -> dict:
-    return {"id": "c1", "object": "chat.completion.chunk", "created": 1, "model": "m",
-            "choices": [{"index": 0, "delta": {"content": text}, "finish_reason": None}], **extra}
+    return {
+        "id": "c1",
+        "object": "chat.completion.chunk",
+        "created": 1,
+        "model": "m",
+        "choices": [{"index": 0, "delta": {"content": text}, "finish_reason": None}],
+        **extra,
+    }
 
 
 async def collect(p: OpenAICompatProvider) -> list[dict]:
@@ -43,8 +54,13 @@ async def test_complete_sends_the_openai_request_and_returns_the_body():
 
     assert await provider(handler).complete(REQ, "llama") == COMPLETION
     assert seen["url"] == "http://upstream/v1/chat/completions" and seen["auth"] == "Bearer secret"
-    assert seen["body"] == {"model": "llama", "messages": [{"role": "user", "content": "hola mundo"}],
-                            "stream": False, "temperature": 0.0, "max_tokens": 50}
+    assert seen["body"] == {
+        "model": "llama",
+        "messages": [{"role": "user", "content": "hola mundo"}],
+        "stream": False,
+        "temperature": 0.0,
+        "max_tokens": 50,
+    }
 
 
 async def test_no_authorization_header_without_a_key():
@@ -61,7 +77,7 @@ async def test_no_authorization_header_without_a_key():
 async def test_missing_usage_is_estimated_upwards():
     body = {**COMPLETION, "usage": None}
     data = await provider(lambda r: httpx.Response(200, json=body)).complete(REQ, "llama")
-    assert data["usage"] == {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6}   # ceil(len / 3)
+    assert data["usage"] == {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6}  # ceil(len / 3)
 
 
 async def test_response_format_is_passed_through():
@@ -76,16 +92,19 @@ async def test_response_format_is_passed_through():
     assert seen["body"]["response_format"] == {"type": "json_object"}
 
 
-@pytest.mark.parametrize("status,body,kind", [
-    (400, {"error": {"message": "bad param", "code": "invalid"}}, "client"),
-    (400, {"error": {"message": "x", "code": "context_length_exceeded"}}, "provider"),
-    (400, {"error": {"message": "This model's maximum context length is 8192 tokens"}}, "provider"),
-    (401, {"error": {"message": "Invalid API Key"}}, "provider"),
-    (404, {"error": {"message": "model not found"}}, "provider"),
-    (429, {"error": {"message": "rate"}}, "transient"),
-    (500, {}, "transient"),
-    (503, {"error": {"message": "overloaded"}}, "transient"),
-])
+@pytest.mark.parametrize(
+    "status,body,kind",
+    [
+        (400, {"error": {"message": "bad param", "code": "invalid"}}, "client"),
+        (400, {"error": {"message": "x", "code": "context_length_exceeded"}}, "provider"),
+        (400, {"error": {"message": "This model's maximum context length is 8192 tokens"}}, "provider"),
+        (401, {"error": {"message": "Invalid API Key"}}, "provider"),
+        (404, {"error": {"message": "model not found"}}, "provider"),
+        (429, {"error": {"message": "rate"}}, "transient"),
+        (500, {}, "transient"),
+        (503, {"error": {"message": "overloaded"}}, "transient"),
+    ],
+)
 async def test_http_errors_are_classified(status, body, kind):
     with pytest.raises(ProviderError) as exc:
         await provider(lambda r: httpx.Response(status, json=body)).complete(REQ, "llama")
@@ -145,7 +164,10 @@ async def test_stream_yields_chunks_asks_for_usage_and_stops_at_done():
 async def test_stream_without_usage_gets_an_estimated_final_chunk():
     chunks = await collect(provider(lambda r: httpx.Response(200, content=sse(delta("abcdef"), "[DONE]"))))
     assert chunks[-1]["choices"] == [] and chunks[-1]["usage"] == {
-        "prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6}
+        "prompt_tokens": 4,
+        "completion_tokens": 2,
+        "total_tokens": 6,
+    }
 
 
 async def test_stream_http_error_is_raised_before_any_chunk():

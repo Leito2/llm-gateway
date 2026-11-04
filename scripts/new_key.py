@@ -6,6 +6,7 @@ Usage: python scripts/new_key.py <client> [alias ...]
 Prints the key once and the config/clients.yaml entry that holds its SHA-256 hash. The key itself is
 never stored: lose it and you create a new one. Format: gw_<client>_<32 random characters>.
 """
+
 import hashlib
 import re
 import secrets
