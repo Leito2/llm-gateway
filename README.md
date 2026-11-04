@@ -6,7 +6,7 @@
 > cancellation, and Prometheus/OpenTelemetry observability.
 > Successor of my Go [llm-edge-gateway](https://github.com/Leito2/llm-edge-gateway) — every capability kept, its limits fixed.
 
-**Status:** `v1.1` — milestones M0–M9 done, 328 tests. M4 (semantic cache) is complete except the items listed under
+**Status:** `v1.1` — milestones M0–M9 done, 329 tests. M4 (semantic cache) is complete except the items listed under
 [Limitations](#part-vi--reflection): calibrated thresholds, a gray-zone verifier model and the Redis cache backend.
 [`PLAN.md`](PLAN.md) holds the full design (Spanish); [`GLOSSARY.md`](GLOSSARY.md) fixes the vocabulary.
 
@@ -136,13 +136,13 @@ registered only when `GW_ANTHROPIC_API_KEY` is set **and** `GW_RUN_BUDGET_USD > 
 | G6 semantic cache quality | 🟡 harness + 42 seed pairs; ~1,000 labeled pairs pending | `scripts/calibrate_cache.py` |
 | G7 contracts | ✅ | `tests/test_openai_sdk.py` (official OpenAI SDK) |
 | G8 chaos | 🟡 mock-based; Toxiproxy/Redis chaos pending (no Docker here) | `tests/test_resilience.py` |
-| G9 hit latency | ⏳ pending end-to-end measurement | — |
+| G9 hit latency | ✅ exact p95 2.0 ms; semantic p95 11.5 ms (target <60 ms), e5-small, threshold set for the run only | `bench/hits.py` |
 | G10 availability | ✅ 99.98% | `bench/availability.py`, nightly workflow |
-| G11 cost saved | ⏳ counters in place (`gw_cost_saved_usd_total`); needs a Zipf replay | — |
+| G11 cost saved | 🟡 synthetic Zipf, exact cache only: 70–94 % of reference cost saved depending on traffic shape; real P2/P3 traffic not available | `bench/savings.py` |
 | G13 throughput | ✅ measured ≈ 1,200 req/s | `bench/throughput.py` |
 | G15 quotas | ✅ | `tests/test_quotas_and_fallback.py` |
 | G12 hedging | ✅ p99 1,015 ms → 131 ms (7.7×) for +6.5% extra calls | `bench/hedging.py` (local only) |
-| G14 guardrails | ⏳ heuristic stand-in; recall / false positives not measured | `guardrails/scan.py` |
+| G14 guardrails | 🟡 hand-written set (94 rows): injection recall 100 % direct / 0 % paraphrase-obfuscation, 4.7 % false positives; PII recall 100 %, precision 93 % | `bench/guardrails.py` |
 
 ### EARS traceability (PLAN §11)
 
@@ -208,7 +208,7 @@ Ollama optional for local models. Everything below runs offline against the buil
 
 ```bash
 uv sync --dev                                   # install
-uv run pytest -q                                # 328 tests
+uv run pytest -q                                # 329 tests
 python scripts/new_key.py me fast smart         # prints a key ONCE + the clients.yaml entry to paste
 ```
 
@@ -254,11 +254,13 @@ made the rest mechanical; every EARS requirement has a test, and the real-uvicor
 **Limitations (honest list).**
 - Semantic thresholds are **uncalibrated**: the cache runs in observation mode until ~1,000 labeled pairs exist and the
   precision/coverage curves are measured for several embedders. The gray-zone verifier model and the Redis cache backend are not built.
-- G9 (hit latency), G11 (cost saved on a Zipf replay) and the Toxiproxy chaos suite are not measured yet.
+- G11 uses synthetic Zipf traffic, so the PLAN's 30–40 % claim is untested on real traffic; G9's semantic threshold was set
+  just for the run (G6 is open). The Toxiproxy chaos suite is not measured yet.
 - The Anthropic adapter is tested against fixtures written from the documented API, not against real streams.
 - The < 5 ms p95 overhead target was missed on the Windows test machine.
 - Presidio redaction is only a start-up guard. The injection / PII guardrail is a regex heuristic (default `monitor`),
-  not Prompt Guard 2 or Presidio, and G14 recall / false-positive rates are not measured.
+  not Prompt Guard 2 or Presidio. On a small hand-written set it catches every direct phrase and none of the paraphrased
+  or obfuscated ones, and flags 3 of 40 benign prompts ("developer mode" on Android, "do anything now" in a song).
 - Langfuse export was not built. Hot reload covers routes, client keys and prices, not providers or budget caps.
 - Hedging, EWMA reordering and the adaptive bulkhead are opt-in per alias / provider and tested in-process only.
 

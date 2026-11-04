@@ -33,7 +33,7 @@ INJECTION = [
 ]
 
 _EMAIL = re.compile(r"\b[\w.+-]+@[\w-]+(\.[\w-]+)+\b")
-_PHONE = re.compile(r"(?<!\w)\+?\d[\d ().-]{8,14}\d(?!\w)")
+_PHONE = re.compile(r"(?<![\w.])\+?\d[\d ()-]{7,16}\d(?![\w.])")
 _CARD = re.compile(r"\b(?:\d[ -]?){13,19}\b")
 _DNI = re.compile(r"\b\d{8}[A-HJ-NP-TV-Z]\b")
 _SSN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
@@ -71,8 +71,10 @@ def pii_kinds(text: str) -> set[str]:
         found.add("ssn")
     if _IBAN.search(text):
         found.add("iban")
-    if not card and _PHONE.search(text):
-        found.add("phone")
+    if not (found - {"email"}) and any(
+        9 <= len(re.sub(r"\D", "", m.group())) <= 13 for m in _PHONE.finditer(text)
+    ):
+        found.add("phone")  # only when nothing more specific matched: an SSN or IBAN is not a phone number
     return found
 
 

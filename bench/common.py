@@ -100,7 +100,7 @@ def server(app: str, port: int, env: dict[str, str] | None = None, workers: int 
 
 
 @contextmanager
-def gateway_stack(embedder: str = "off", workers: int = 1):
+def gateway_stack(embedder: str = "off", workers: int = 1, extra_env: dict[str, str] | None = None):
     """Upstream + gateway as separate processes. Yields (gateway_url, upstream_url)."""
     up_port, gw_port = free_port(), free_port()
     with tempfile.TemporaryDirectory(prefix="gw-bench-") as tmp:
@@ -114,6 +114,7 @@ def gateway_stack(embedder: str = "off", workers: int = 1):
             "GW_EMBEDDER": embedder,
             "GW_CACHE_BACKEND": "memory",
             "GW_MAX_IN_FLIGHT": "100000",
+            **(extra_env or {}),
         }
         with server("bench.upstream:app", up_port), server("llm_gateway.main:app", gw_port, env, workers):
             yield f"http://127.0.0.1:{gw_port}", f"http://127.0.0.1:{up_port}"

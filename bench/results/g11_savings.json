@@ -1,0 +1,37 @@
+{
+  "traffic": {
+    "zipf_s": 1.1,
+    "questions": 300,
+    "tokens_per_call": [
+      60,
+      180
+    ]
+  },
+  "verbatim_repeats": {
+    "wordings_per_question": 1,
+    "requests": 5000,
+    "provider_calls": 283,
+    "hit_rate": 0.9434,
+    "reference_cost_without_cache_usd": 0.89,
+    "reference_cost_with_cache_usd": 0.0504,
+    "cost_saved_pct": 94.3
+  },
+  "paraphrase_noise": {
+    "wordings_per_question": 3,
+    "requests": 5000,
+    "provider_calls": 677,
+    "hit_rate": 0.8646,
+    "reference_cost_without_cache_usd": 0.89,
+    "reference_cost_with_cache_usd": 0.1205,
+    "cost_saved_pct": 86.5
+  },
+  "long_tail_paraphrase_noise": {
+    "wordings_per_question": 3,
+    "requests": 5000,
+    "provider_calls": 1492,
+    "hit_rate": 0.7016,
+    "reference_cost_without_cache_usd": 0.89,
+    "reference_cost_with_cache_usd": 0.2656,
+    "cost_saved_pct": 70.2
+  }
+}

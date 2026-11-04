@@ -209,3 +209,15 @@ async def test_the_watcher_survives_a_bad_edit_and_applies_the_next_good_one(tmp
                 await asyncio.sleep(0.02)
     finally:
         task.cancel()
+
+
+def test_g14_measured_numbers_do_not_regress():
+    import sys
+
+    sys.path.insert(0, ".")
+    from bench.guardrails import main as g14
+
+    r = g14()
+    assert r["injection"]["recall_direct_phrases"] == 1.0
+    assert r["injection"]["false_positive_rate"] <= 0.1
+    assert r["pii"]["recall"] >= 0.9 and r["pii"]["precision"] >= 0.9

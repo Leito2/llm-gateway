@@ -19,9 +19,13 @@ test:        ## Run tests
 	uv run pytest -q
 eval:        ## Nightly checks: G10 availability (the rest of the suite is `make test`)
 	uv run python -m bench.availability
-bench:       ## Local speed numbers: G1 overhead and G13 throughput (slow; results in bench/results/)
+bench:       ## Local numbers: G1 overhead, G13 throughput, G9 hit latency, G11 savings, G12 hedging, G14 guardrails
 	uv run python -m bench.overhead
 	uv run python -m bench.throughput
+	uv run python -m bench.hits
+	uv run python -m bench.savings
+	uv run python -m bench.hedging
+	uv run python -m bench.guardrails
 lint:        ## Lint
 	uv run ruff check .
 fmt:         ## Format
