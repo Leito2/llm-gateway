@@ -1,0 +1,11 @@
+{
+  "seconds": 8.0,
+  "client_processes": 7,
+  "workers": {
+    "1": {
+      "requests": 9917,
+      "errors": 0,
+      "rps": 1240
+    }
+  }
+}

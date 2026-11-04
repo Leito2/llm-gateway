@@ -1,0 +1,21 @@
+{
+  "seconds": 8.0,
+  "client_processes": 4,
+  "workers": {
+    "1": {
+      "requests": 9857,
+      "errors": 0,
+      "rps": 1232
+    },
+    "2": {
+      "requests": 9456,
+      "errors": 0,
+      "rps": 1182
+    },
+    "4": {
+      "requests": 9969,
+      "errors": 0,
+      "rps": 1246
+    }
+  }
+}

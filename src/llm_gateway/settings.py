@@ -34,5 +34,6 @@ class Settings(BaseSettings):
     admin_key_sha256: str | None = None  # SHA-256 of the admin key: guards /stats, /metrics, /admin/*
     otel_endpoint: str | None = None  # OTLP/HTTP endpoint (e.g. http://jaeger:4318); unset = no tracing
     rate_limit_backend: Literal["memory", "redis"] = "memory"  # redis falls back to memory when it is down
+    cors_origins: str = ""  # comma-separated origins (or *) allowed to call from a browser
     max_body_bytes: int = 8_000_000  # larger requests get 413 before parsing
     guardrails_mode: str = "monitor"  # off | monitor | enforce

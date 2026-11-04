@@ -316,3 +316,33 @@ def test_traceparent_continues_the_callers_trace():
 
 def test_no_tracing_without_an_endpoint():
     assert make_app().state.gateway.tracer.enabled is False
+
+
+# --- opt-in CORS (browser apps on another origin) ------------------------------------------------
+
+
+def preflight(c, origin="https://page.example"):
+    return c.options(
+        "/v1/chat/completions",
+        headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "authorization,content-type",
+            "Access-Control-Request-Private-Network": "true",
+        },
+    )
+
+
+def test_cors_is_off_by_default():
+    with TestClient(make_app()) as c:
+        assert "access-control-allow-origin" not in preflight(c).headers
+
+
+def test_cors_opt_in_answers_preflights_exposes_gateway_headers_and_allows_private_network():
+    with TestClient(make_app(cors_origins="https://page.example")) as c:
+        pre = preflight(c)
+        assert pre.status_code == 200 and pre.headers["access-control-allow-origin"] == "https://page.example"
+        assert pre.headers["access-control-allow-private-network"] == "true"
+        assert "access-control-allow-origin" not in preflight(c, "https://evil.example").headers
+        r = c.post("/v1/chat/completions", headers={**AUTH, "Origin": "https://page.example"}, json=BODY)
+    assert "x-gateway-provider" in r.headers["access-control-expose-headers"].lower()

@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help doctor setup dev up up-obs down test eval lint fmt
+.PHONY: help doctor setup dev up up-obs down test eval bench lint fmt
 
 help:        ## List targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -17,8 +17,11 @@ down:        ## Stop the stack (all profiles)
 	docker compose --profile obs down
 test:        ## Run tests
 	uv run pytest -q
-eval:        ## Full evaluations G6, G9, G10, G11 (same as the nightly workflow; arrives in M4/M9)
-	@echo "eval suite not implemented yet (PLAN §10)"
+eval:        ## Nightly checks: G10 availability (the rest of the suite is `make test`)
+	uv run python -m bench.availability
+bench:       ## Local speed numbers: G1 overhead and G13 throughput (slow; results in bench/results/)
+	uv run python -m bench.overhead
+	uv run python -m bench.throughput
 lint:        ## Lint
 	uv run ruff check .
 fmt:         ## Format

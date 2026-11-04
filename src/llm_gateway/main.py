@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from llm_gateway import __version__
 from llm_gateway.api import admin, chat, embeddings, health, models, ui
 from llm_gateway.api import metrics as metrics_api
+from llm_gateway.api.cors import install_cors
 from llm_gateway.api.errors import install_error_handlers
 from llm_gateway.api.limits import BodyLimitMiddleware
 from llm_gateway.budget.memory import MemoryBudget
@@ -119,6 +120,7 @@ def create_app(settings: Settings | None = None, tracer_provider=None) -> FastAP
     )
     install_error_handlers(app)
     app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_body_bytes)
+    install_cors(app, settings.cors_origins)
     for module in (health, models, chat, embeddings, admin, metrics_api, ui):
         app.include_router(module.router)
     return app

@@ -1,0 +1,20 @@
+{
+  "requests": 10000,
+  "success": 9998,
+  "success_rate": 0.9998,
+  "status_codes": {
+    "200": 9998,
+    "504": 2
+  },
+  "primary_calls": 9,
+  "breaker_primary": {
+    "state": "open",
+    "consecutive_failures": 0,
+    "window_calls": 0,
+    "error_rate": 0.0,
+    "slow_rate": 0.0,
+    "retry_in_s": 21.9
+  },
+  "seconds": 8.1,
+  "pass": true
+}

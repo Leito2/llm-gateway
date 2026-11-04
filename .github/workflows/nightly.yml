@@ -1,0 +1,32 @@
+name: nightly
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+# Only measurements that give the same answer on any machine run here (PLAN section 10): speed numbers
+# (G1, G13) are local because GitHub runners are shared and their speed varies.
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: uv sync --locked --all-packages --dev
+      - name: Lint and tests
+        run: |
+          uv run ruff check .
+          uv run pytest -q
+      - name: G10 availability (10k requests, sick primary)
+        run: uv run python -m bench.availability --requests 10000
+      - name: G6 calibration harness on the seed pairs (hash embedder)
+        run: uv run python scripts/calibrate_cache.py hash || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-results
+          path: bench/results/
