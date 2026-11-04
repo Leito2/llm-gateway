@@ -8,6 +8,7 @@ Real embedders (multilingual-e5-small in ONNX, PLAN §6.6) plug in behind the sa
 import hashlib
 import math
 import re
+from pathlib import Path
 from typing import Protocol
 
 _WORD = re.compile(r"\w+", re.UNICODE)
@@ -48,8 +49,12 @@ def cosine(a: list[float], b: list[float]) -> float:
     return sum(x * y for x, y in zip(a, b, strict=True))
 
 
-def build_embedder(name: str) -> Embedder | None:
+def build_embedder(name: str, models_dir: Path = Path("models")) -> Embedder | None:
     """None means "no embedder": semantic layer and `/v1/embeddings` are off; the exact cache still works."""
     if name == "hash":
         return HashEmbedder()
+    if name == "e5-small":
+        from llm_gateway.cache.onnx_embedder import load_onnx_embedder
+
+        return load_onnx_embedder(name, models_dir / name)
     return None

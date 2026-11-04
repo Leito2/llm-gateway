@@ -51,7 +51,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     quotas = QuotaLimiter({name: spec.quotas for name, spec in provider_config.providers.items()})
     breakers = BreakerRegistry()
     cache_config = load_cache_config(settings.cache_file)
-    embedder = None if settings.embedder == "off" else build_embedder(settings.embedder)
+    embedder = None if settings.embedder == "off" else build_embedder(settings.embedder, settings.models_dir)
     cache = (
         None
         if settings.cache_backend == "off"

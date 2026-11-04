@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     drain_timeout_s: float = 8.0                  # SIGTERM: time active streams get to finish (PLAN §4.9)
     cache_backend: Literal["memory", "off"] = "memory"   # `redis` joins once verified on Redis 8
     embedder: str = "e5-small"                    # `hash` (offline stand-in), a model name, or `off`
+    models_dir: Path = Path("models")             # ONNX model files, one folder per embedder (git-ignored)
     redis_url: str = "redis://localhost:6379/0"
     ollama_base_url: str = "http://host.docker.internal:11434/v1"
     groq_api_key: str | None = None               # free tier ($0)
