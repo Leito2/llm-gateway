@@ -27,8 +27,13 @@ Several details were open:
 - **Max cost:** input tokens (Anthropic `count_tokens`, fallback `ceil(chars / 3)`) × input price
   (the `cache_write` price when prompt caching is on) + clamped `max_tokens` × output price.
   Adaptive thinking is billed as output inside `max_tokens`, so it is covered.
-- **Expiry:** each reservation has a TTL of the alias `total_timeout` + 30 s. A late settle still adds
-  the real cost to `spent` and increments `gw_budget_late_settle_total`.
+- **Expiry:** each reservation expires after the alias `total_timeout` + 30 s. Expiry is **logical**,
+  not a Redis TTL: reservations live in a sorted set scored by deadline plus a hash of amounts, both
+  without TTL. Every `reserve` first releases expired reservations (subtracting their amounts from
+  `reserved`) in the same Lua script; the clock is Redis `TIME`, so all processes agree. A Redis TTL
+  would not work: an expiring key cannot decrement `reserved`, and under `volatile-lfu` it would be
+  evictable. A late settle still adds the real cost to `spent` and increments
+  `gw_budget_late_settle_total`.
 - **Cancelled streams** settle full input plus emitted output; missing `usage` is estimated
   conservatively (rounded up).
 - **Redis memory:** `maxmemory-policy volatile-lfu` (only keys with a TTL, i.e. cache entries, are
@@ -38,4 +43,7 @@ Several details were open:
 - Exact sums: the "0 overspend" test (G3) cannot fail because of rounding.
 - Recorded spend is never lower than real spend; in the worst case it is slightly higher.
 - Clients get an answer from a free provider instead of an error when the paid budget runs out.
-- A test fills the cache up to `maxmemory` and checks that budget keys survive.
+- A test fills the cache up to `maxmemory` and checks that budget keys, including open
+  reservations, survive.
+- A test reserves, lets the deadline pass without settling, and checks that the next `reserve`
+  releases the amount.

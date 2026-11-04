@@ -47,7 +47,7 @@ Términos fijos del proyecto. Cada concepto tiene **un solo nombre**: usarlo igu
 | Término | En inglés / código | Definición |
 |---|---|---|
 | **Presupuesto (budget)** | budget | Tope de gasto en dinero. Hay 3 topes: por corrida, por cliente por día y global por día (día UTC). |
-| **Reserva** | reservation | Monto máximo posible de una request, apartado en Redis antes de llamar a un proveedor pago. |
+| **Reserva** | reservation | Monto máximo posible de una request, apartado en Redis antes de llamar a un proveedor pago. Vence por fecha guardada en un sorted set (vencimiento lógico), nunca por TTL de Redis. |
 | **Liquidación** | settle | Al terminar: liberar la reserva y sumar el costo real al gasto. |
 | **Gasto** | spent | Suma de costos reales liquidados. |
 | **Micro-dólar** | micro-dollar | Unidad interna de dinero: 1 USD = 1 000 000. Siempre entero. |

@@ -223,7 +223,7 @@ LiteLLM queda como **referencia y baseline opcional** (G2): el benchmark de over
 | **Providers** (`providers/`) | Adapters con una interfaz común: `complete()`, `stream()`, `embed()` | Protocolo `Provider`; `MockProvider` (latencia, TPOT, tasa de fallas y cola larga configurables, determinista por semilla; **solo con `GW_ENV` = `dev` o `test`**); `OpenAICompatProvider` (Ollama vía `/v1`, Groq, Google AI Studio, OpenRouter, vLLM; siempre envía `stream_options: {include_usage: true}`); `AnthropicProvider` (ADR-0005). Errores tipados en §3.1 | SDKs oficiales (más peso) |
 | **Cuotas salientes** (`quotas/`) | Respetar RPM/TPM/RPD de cada proveedor | Token buckets en Redis por proveedor y modelo; lectura de headers `x-ratelimit-*` y `retry-after` para ajustar en vivo | Esperar al 429 (lo que hace casi todo el mundo) |
 | **Resiliencia** (`resilience/`) | Timeouts, reintentos, breaker, bulkhead (core); hedging y concurrencia adaptativa (stretch) | Breaker con ventana deslizante en memoria del proceso (ADR-0003); backoff exponencial con jitter completo; bulkhead fijo por proveedor; limitador AIMD/gradiente y hedging con presupuesto como stretch | tenacity / aiobreaker |
-| **Budget** (`budget/`) | Reserva y liquidación atómicas | Lua en Redis: `reserve(run, client, max_cost)` revisa los 3 topes (corrida, cliente/día, global/día; día UTC) en una sola operación, y `settle(id, real)`; montos en micro-dólares enteros; reservas con TTL; `GET /admin/budget` (ADR-0004) | Contabilidad en Postgres (más lenta) |
+| **Budget** (`budget/`) | Reserva y liquidación atómicas | Lua en Redis: `reserve(run, client, max_cost)` revisa los 3 topes (corrida, cliente/día, global/día; día UTC) en una sola operación, y `settle(id, real)`; montos en micro-dólares enteros; reservas con vencimiento lógico (sorted set, sin TTL de Redis); `GET /admin/budget` (ADR-0004) | Contabilidad en Postgres (más lenta) |
 | **Pricing y tokens** (`pricing/`) | Del uso al costo en USD, y estimación previa | `config/prices.yaml` (entrada, salida, cache read/write); conteo previo con el endpoint `count_tokens` de Anthropic y, si falla o no existe, `ceil(caracteres / 3)`; el `usage` del proveedor manda al liquidar; si falta `usage`, estimación conservadora (redondeo hacia arriba) y métrica `gw_usage_estimated_total` | Tablas de LiteLLM |
 | **Caché** (`cache/`) | Exacta + semántica obligatoria con defensas en capas | Ver §6 | GPTCache, Qdrant |
 | **Embeddings** (`embeddings/`) | Vectores para la caché y endpoint `/v1/embeddings` | Protocolo `Embedder`: `OnnxEmbedder` (multilingual-e5-small int8, CPU, por defecto) y `OllamaEmbedder` (`nomic-embed-text`, heredado); EmbeddingGemma-300M como candidato medido en G6 (§6.6); micro-batching | FastEmbed |
@@ -330,15 +330,17 @@ $C = (t_{in}\,p_{in} + t_{out}\,p_{out} + t_{cache\_read}\,p_{cr} + t_{cache\_wr
 
 ### 5.2 Presupuesto atómico (reservar y liquidar)
 ```
-reserve: if spent + reserved + max_cost > cap (para cada uno de los 3 topes) → reject
-         else reserved += max_cost; return reservation_id      (Lua, atómico)
-settle:  reserved -= max_cost; spent += real_cost              (Lua, atómico)
-expira:  las reservas huérfanas (p. ej., un proceso que murió) caducan con TTL y se liberan
+reserve: liberar reservas vencidas (reserved -= sus montos)
+         if spent + reserved + max_cost > cap (para cada uno de los 3 topes) → reject
+         else reserved += max_cost; ZADD reservas <vence_en> <id>; return id   (Lua, atómico)
+settle:  if id sigue en reservas → reserved -= su monto; quitar id
+         spent += real_cost                                             (Lua, atómico)
 ```
+Las reservas huérfanas (p. ej., un proceso que murió) se liberan por **vencimiento lógico**: un sorted set ordenado por fecha de vencimiento, más un hash con el monto de cada reserva, ambos **sin TTL de Redis**. Un TTL no sirve: cuando la key vence, Redis no descuenta `reserved`, y con `volatile-lfu` la key sería desalojable. La hora sale de `TIME` del propio Redis, así todos los procesos usan el mismo reloj.
 - **Topes:** `RUN_BUDGET_USD` (la prueba final de P3, p. ej., US$3), el tope por cliente por día y el tope global por día. El día empieza a las **00:00 UTC**. Un solo script revisa los 3 topes: si uno no alcanza, no se reserva nada (así no queda dinero bloqueado en un tope cuando otro falla).
 - **Solo proveedores pagos reservan.** Los gratuitos no tocan el presupuesto; su costo de referencia va solo a métricas. Si Redis cae, los gratuitos siguen y los pagos se bloquean (ADR-7).
 - **Si la reserva no alcanza:** se salta el proveedor pago y se sigue con el siguiente de la cadena, con `X-Budget-Skipped: <proveedor>`. `402 budget_exceeded` solo si no queda ningún proveedor (R05).
-- **TTL de la reserva:** `total_timeout` del alias + 30 s. Si la liquidación llega después del vencimiento, el costo real **se suma igual** a `spent` y se cuenta en `gw_budget_late_settle_total`. El gasto registrado nunca queda por debajo del real.
+- **Vencimiento de la reserva:** `total_timeout` del alias + 30 s. Si la liquidación llega después del vencimiento, el costo real **se suma igual** a `spent` y se cuenta en `gw_budget_late_settle_total`. El gasto registrado nunca queda por debajo del real.
 - **Stream cancelado o cortado:** se liquida la entrada completa más los tokens de salida emitidos; si falta `usage`, se usa la estimación conservadora de §3.
 
 El test de concurrencia dispara 50 requests contra un tope que alcanza para 10, y verifica que pasan como máximo 10 y que el gasto real nunca supera el tope. Un segundo test llena la caché hasta `maxmemory` y verifica que las keys del presupuesto sobreviven (`volatile-lfu`: solo se desalojan keys con TTL, y el presupuesto no tiene). Detalle y razones en [ADR-0004](docs/adr/0004-budget-accounting.md).
@@ -592,7 +594,7 @@ llm-gateway/
 | **M2 · Proveedores + routing** | `OpenAICompatProvider` (Groq, Google AI Studio y Ollama vía `/v1`, incl. fallback `gemma3:1b`), `ProviderError` con 3 tipos, `routes.yaml`, aliases, `allowed_aliases`, clamp de `max_tokens`, `allow_degraded`, cuotas salientes. Verificar streaming, `usage` y `response_format` de Ollama `/v1` | P1, P2 y P4 pueden apuntar al gateway con `fast` y `smart`; G15; R17–R19 |
 | **M3 · Resiliencia** | Timeouts por fase, reintentos, **breaker con 3 disparadores**, bulkhead fijo, fallback, singleflight, load shedding, apagado ordenado | G4, G8 parcial; R03, R04, R13, R14, R23 |
 | **M4 · Caché semántica** | Exacta + semántica obligatoria (namespace, umbral calibrado, guardas, verificador, tags, modo observación), `/v1/embeddings`, embedders `e5-small` (por defecto), EmbeddingGemma-300M y `nomic-embed-text` | **G6, G9 y G11 medidos**; R07–R09, R21 |
-| **M5 · Budget + pricing** | Lua de reserva y liquidación (micro-dólares, 3 topes, TTL), conteo previo, `/admin/budget`, salto de proveedor pago, prompt caching (marcado automático y reserva a precio `cache_write`) | **G3 en verde**; test de `volatile-lfu`; R05, R06 |
+| **M5 · Budget + pricing** | Lua de reserva y liquidación (micro-dólares, 3 topes, vencimiento lógico de reservas), conteo previo, `/admin/budget`, salto de proveedor pago, prompt caching (marcado automático y reserva a precio `cache_write`) | **G3 en verde**; test de `volatile-lfu`; R05, R06 |
 | **M6 · Streaming robusto** | Cancelación, stalls, `: ping`, `[DONE]`, chunk de error, regresión del Go | G5; R10, R11 |
 | **M7 · Structured + Anthropic** | `response_format` (con stream: validar antes de enviar), reparación, `AnthropicProvider` para Haiku 5.5 con streaming, prompt caching, `effort`, parámetros quitados y rechazos (ADR-0005) | Probado con fixtures escritos desde los eventos documentados ($0); antes de la prueba final de P3, grabar unos pocos streams reales con `GW_RUN_BUDGET_USD=0.10`; verificar si `count_tokens` es gratis; R15, R20 |
 | **M8 · Observabilidad y seguridad** | Métricas, log JSON, OTel mínimo + Jaeger, perfil `obs` con dashboard de Grafana, keys por cliente con `new_key.py`, key de admin, rate limit con respaldo en memoria | Dashboard del gateway en Grafana; R16, R22 |
