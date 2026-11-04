@@ -1,4 +1,5 @@
 """FastAPI dependency: `Authorization: Bearer <key>` -> client name, or 401."""
+
 from fastapi import Request
 
 from llm_gateway.api.errors import GatewayError
@@ -12,8 +13,9 @@ async def require_client(request: Request) -> str:
     key = key.strip()
     if scheme.lower() != "bearer" or not key:
         gw.stats.record("-", "-", 401)
-        raise GatewayError(401, "missing_api_key", "Send your key as `Authorization: Bearer <key>`.",
-                           headers=_CHALLENGE)
+        raise GatewayError(
+            401, "missing_api_key", "Send your key as `Authorization: Bearer <key>`.", headers=_CHALLENGE
+        )
     name = gw.clients.authenticate(key)
     if name is None:
         gw.stats.record("-", "-", 401)

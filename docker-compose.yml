@@ -19,22 +19,28 @@ services:
     mem_limit: 200m
 
   prometheus:
-    image: prom/prometheus:latest       # pin a version in M8
+    image: prom/prometheus:v3.0.1
     profiles: ["obs"]
-    volumes: ["./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/admin.key:/etc/prometheus/admin.key:ro   # raw admin key, git-ignored
     ports: ["9090:9090"]
     mem_limit: 300m
 
   grafana:
-    image: grafana/grafana:latest       # pin a version in M8; provisioning + versioned dashboard JSON arrive in M8
+    image: grafana/grafana:11.3.1
     profiles: ["obs"]
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    environment: { GF_AUTH_ANONYMOUS_ENABLED: "true", GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer }
     ports: ["3000:3000"]
     mem_limit: 200m
 
   jaeger:
-    image: jaegertracing/all-in-one:latest   # pin a version in M8; gateway exports OTLP when GW_OTEL_ENDPOINT is set
+    image: jaegertracing/all-in-one:1.62.0   # gateway exports OTLP/HTTP here when GW_OTEL_ENDPOINT=http://jaeger:4318
     profiles: ["obs"]
-    ports: ["16686:16686", "4317:4317"]
+    ports: ["16686:16686", "4317:4317", "4318:4318"]
     mem_limit: 200m
 
 volumes:

@@ -1,4 +1,5 @@
 """Clients and their API keys. Only SHA-256 hashes are stored (config/clients.yaml, git-ignored)."""
+
 import hashlib
 import hmac
 import logging
@@ -16,9 +17,9 @@ _SHA256 = re.compile(r"[0-9a-f]{64}")
 
 class ClientConfig(BaseModel):
     key_sha256: str
-    rpm: int = Field(default=60, gt=0)                 # enforced in M8
-    budget_usd_per_day: float = Field(default=0.0, ge=0)   # enforced in M5
-    allowed_aliases: list[str] = Field(default_factory=list)   # fail-closed: empty means no alias
+    rpm: int = Field(default=60, gt=0)  # per-minute limit, enforced since M8
+    budget_usd_per_day: float = Field(default=0.0, ge=0)  # caps paid spend per UTC day (M5); 0 = no paid
+    allowed_aliases: list[str] = Field(default_factory=list)  # fail-closed: empty means no alias
 
     @field_validator("key_sha256")
     @classmethod

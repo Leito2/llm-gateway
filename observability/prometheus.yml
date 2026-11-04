@@ -1,5 +1,13 @@
+# Scrapes the gateway every 5 s. /metrics needs the admin key (GW_ADMIN_KEY_SHA256 holds its hash):
+# put the RAW key in observability/admin.key (git-ignored) before `make up-obs`.
+global:
+  scrape_interval: 5s
+
 scrape_configs:
   - job_name: llm-gateway
-    scrape_interval: 5s
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/admin.key
     static_configs:
       - targets: ["llm-gateway:8080"]

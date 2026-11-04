@@ -1,4 +1,5 @@
 """FastAPI application factory."""
+
 import asyncio
 from contextlib import asynccontextmanager
 
@@ -7,7 +8,9 @@ from fastapi import FastAPI
 
 from llm_gateway import __version__
 from llm_gateway.api import admin, chat, embeddings, health, models, ui
+from llm_gateway.api import metrics as metrics_api
 from llm_gateway.api.errors import install_error_handlers
+from llm_gateway.api.limits import BodyLimitMiddleware
 from llm_gateway.budget.memory import MemoryBudget
 from llm_gateway.budget.service import BudgetService
 from llm_gateway.cache.config import load_cache_config
@@ -26,9 +29,14 @@ from llm_gateway.resilience.lifecycle import Lifecycle
 from llm_gateway.resilience.singleflight import Singleflight
 from llm_gateway.routing.config import load_routes
 from llm_gateway.security.clients import load_clients
+from llm_gateway.security.ratelimit import RateLimiter
 from llm_gateway.settings import Settings
 from llm_gateway.state import GatewayState
+from llm_gateway.telemetry.metrics import Metrics
+from llm_gateway.telemetry.privacy import check_prompt_logging
+from llm_gateway.telemetry.record import configure_access_log
 from llm_gateway.telemetry.stats import Stats
+from llm_gateway.telemetry.tracing import build_tracer
 
 
 @asynccontextmanager
@@ -41,8 +49,10 @@ async def _lifespan(app: FastAPI):
     await gw.http.aclose()
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, tracer_provider=None) -> FastAPI:
     settings = settings or Settings()
+    check_prompt_logging(settings)
+    configure_access_log(settings.access_log)
     routes = load_routes(settings.routes_file)
     provider_config = load_providers(settings.providers_file)
     provider_config.check_routes(routes)
@@ -54,7 +64,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     quotas = QuotaLimiter({name: spec.quotas for name, spec in provider_config.providers.items()})
     breakers = BreakerRegistry()
     prices = load_prices(settings.prices_file)
-    stats = Stats()
+    metrics = Metrics()
+    stats = Stats(metrics)
     if settings.budget_backend == "redis":
         import redis.asyncio as aioredis
 
@@ -78,8 +89,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if settings.cache_backend == "off"
         else CacheService(MemoryBackend(cache_config.max_entries), cache_config, embedder)
     )
-    bulkhead = Bulkhead({name: spec.concurrency for name, spec in provider_config.providers.items()
-                         if spec.concurrency})
+    tracer = build_tracer(settings.otel_endpoint, tracer_provider)
+    bulkhead = Bulkhead(
+        {name: spec.concurrency for name, spec in provider_config.providers.items() if spec.concurrency}
+    )
 
     app = FastAPI(title="llm-gateway", version=__version__, lifespan=_lifespan)
     app.state.gateway = GatewayState(
@@ -95,16 +108,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         admission=Admission(settings.max_in_flight),
         singleflight=Singleflight(),
         lifecycle=Lifecycle(settings.drain_timeout_s),
-        executor=Executor(providers, breakers, bulkhead, quotas),
+        executor=Executor(providers, breakers, bulkhead, quotas, tracer=tracer),
         embedder=embedder,
         cache=cache,
         prices=prices,
         budget=budget,
+        metrics=metrics,
+        ratelimit=_build_ratelimit(settings),
+        tracer=tracer,
     )
     install_error_handlers(app)
-    for module in (health, models, chat, embeddings, admin, ui):
+    app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_body_bytes)
+    for module in (health, models, chat, embeddings, admin, metrics_api, ui):
         app.include_router(module.router)
     return app
+
+
+def _build_ratelimit(settings: Settings) -> RateLimiter:
+    if settings.rate_limit_backend == "redis":
+        import redis.asyncio as aioredis
+
+        return RateLimiter(redis=aioredis.from_url(settings.redis_url))
+    return RateLimiter()
 
 
 app = create_app()

@@ -5,6 +5,7 @@ Retry and fallback happen only before the first token leaves (ADR-4), so a strea
 first chunk here. After that the caller owns the stream and the `Lease` that holds the bulkhead slot."""
 
 import asyncio
+import contextlib
 import logging
 import random
 import time
@@ -21,6 +22,7 @@ from llm_gateway.resilience.bulkhead import Bulkhead
 from llm_gateway.resilience.retry import backoff_s
 from llm_gateway.routing.config import AliasPolicy, Target
 from llm_gateway.structured.validate import OutputValidator, merge_usage, repair_request
+from llm_gateway.telemetry.tracing import Tracer
 
 log = logging.getLogger(__name__)
 
@@ -85,6 +87,7 @@ class Executor:
     clock: Callable[[], float] = time.monotonic
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
     rng: random.Random = field(default_factory=random.Random)
+    tracer: Tracer | None = None  # one span per provider attempt, when tracing is on
 
     async def run(
         self,
@@ -221,10 +224,12 @@ class Executor:
         validate: OutputValidator | None = None,
         repair_ok: bool = True,
     ) -> Attempt:
+        span = self.tracer.attempt(target.provider, target.model) if self.tracer else contextlib.nullcontext()
         try:
-            return await self._call_once(
-                target, breaker, lease, depth, deadline, policy, request, stream, validate, repair_ok
-            )
+            with span:
+                return await self._call_once(
+                    target, breaker, lease, depth, deadline, policy, request, stream, validate, repair_ok
+                )
         except (ProviderError, asyncio.CancelledError):
             raise
         except Exception as exc:  # an adapter bug is one failed link, not a crashed request

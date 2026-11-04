@@ -15,6 +15,7 @@ from starlette.background import BackgroundTask
 from llm_gateway.api.errors import GatewayError, request_id
 from llm_gateway.api.schemas import ChatCompletionRequest
 from llm_gateway.budget.service import estimate_emitted
+from llm_gateway.guardrails.size import check_shape
 from llm_gateway.pricing.prices import Usage, reference_micro
 from llm_gateway.pricing.tokens import estimate_prompt_tokens
 from llm_gateway.providers.base import ProviderError
@@ -26,6 +27,7 @@ from llm_gateway.routing.resolver import usable_chain
 from llm_gateway.security.auth import require_client
 from llm_gateway.state import GatewayState
 from llm_gateway.structured.validate import InvalidSchema, build_validator
+from llm_gateway.telemetry.record import RequestRecord, current_record
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -75,6 +77,8 @@ class StreamCtx:
         self.finalize = finalize  # settles the budget and books the cost when the stream is over
         self.usage: dict | None = None  # the provider's own usage, when it sent one
         self.emitted_chars = 0
+        self.outcome: str | None = None  # completed, or the error code that cut the stream
+        self.rec = current_record.get()
         self._closed = False
 
     async def close(self) -> None:
@@ -94,6 +98,12 @@ class StreamCtx:
         if self.finalize:
             with contextlib.suppress(Exception):
                 await self.finalize(self)
+        if self.rec is not None:
+            with contextlib.suppress(Exception):
+                if self.rec.usage is None and not self.rec.cache_layer:
+                    self.rec.usage = self.usage
+                self.rec.stream_outcome = self.outcome or "client_disconnected"
+                self.rec.finish()
 
 
 async def _next_chunk(ctx: StreamCtx) -> dict | None:
@@ -212,8 +222,10 @@ async def _event_stream(first: dict, ctx: StreamCtx) -> AsyncIterator[str]:
             ctx.on_complete(ctx.shared)
         if ctx.include_usage and usage:
             yield _sse({**meta, "object": "chat.completion.chunk", "choices": [], "usage": usage})
+        ctx.outcome = "completed"
         yield "data: [DONE]\n\n"
     except _StreamAbort as abort:
+        ctx.outcome = abort.code
         log.warning("stream aborted (%s): %s", abort.code, abort)
         if abort.blame_provider and ctx.breaker is not None:
             ctx.breaker.record_failure()
@@ -299,6 +311,47 @@ async def chat_completions(
 ):
     gw: GatewayState = request.app.state.gateway
     rid = request_id(request)
+    alias = body.model if body.model in gw.routes.aliases else "unknown"  # bounded labels
+    span = gw.tracer.start_request(alias, request.headers, rid)
+    rec = RequestRecord(gw, rid, client, alias, body.stream, span)
+    token = current_record.set(rec)
+    try:
+        await _check_rate_limit(gw, client, rid)
+        resp = await _chat(gw, body, request, client, rid)
+    except GatewayError as exc:
+        rec.finish(exc.status, exc.code)
+        raise
+    except BaseException as exc:  # includes cancellation: the client left
+        span.end(exc)
+        rec.finish(499 if isinstance(exc, asyncio.CancelledError) else 500, type(exc).__name__)
+        raise
+    finally:
+        span.detach()
+        current_record.reset(token)
+    if not isinstance(resp, StreamingResponse):  # streams finish when they end (StreamCtx.close)
+        rec.finish(resp.status_code)
+    return resp
+
+
+async def _check_rate_limit(gw: GatewayState, client: str, rid: str) -> None:
+    if gw.ratelimit is None:
+        return
+    ok, retry_after = await gw.ratelimit.check(client, gw.clients.get(client).rpm)
+    if not ok:
+        gw.stats.record("-", "-", 429)
+        if gw.metrics:
+            gw.metrics.rate_limited.labels(client).inc()
+        raise GatewayError(
+            429,
+            "rate_limit_exceeded",
+            f"Client `{client}` is over its {gw.clients.get(client).rpm} requests per minute.",
+            type_="rate_limit_error",
+            headers={"X-Request-Id": rid, "Retry-After": str(int(retry_after) + 1)},
+        )
+
+
+async def _chat(gw: GatewayState, body: ChatCompletionRequest, request: Request, client: str, rid: str):
+    allowed = gw.clients.get(client).allowed_aliases
     allowed = gw.clients.get(client).allowed_aliases
     policy = gw.routes.aliases.get(body.model)
     if policy is None:
@@ -328,6 +381,8 @@ async def chat_completions(
     ticket = gw.admission.try_admit(priority)
     if ticket is None:
         gw.stats.record(body.model, "-", 503)
+        if gw.metrics:
+            gw.metrics.shed.labels(priority).inc()
         raise GatewayError(
             503,
             "overloaded",
@@ -375,6 +430,12 @@ async def _serve(
     if body.max_tokens is not None and body.max_tokens > policy.max_tokens:
         base_headers["X-Max-Tokens-Clamped"] = str(policy.max_tokens)
 
+    broken = check_shape(policy, body.messages)
+    if broken is not None:
+        gw.stats.record(body.model, "-", 400)
+        if gw.metrics:
+            gw.metrics.guardrails.labels("size", "enforce").inc()
+        raise GatewayError(400, broken[0], broken[1], param="messages", headers={"X-Request-Id": rid})
     prompt_tokens = estimate_prompt_tokens(body.messages)
     if policy.max_input_tokens is not None and prompt_tokens > policy.max_input_tokens:
         gw.stats.record(body.model, "-", 400)
@@ -391,8 +452,15 @@ async def _serve(
     if gw.cache is not None:
         creq = gw.cache.prepare(client, body.model, policy, body, request_headers)
         hit = await gw.cache.lookup(creq) if creq else None
+        if creq is not None and hit is None:
+            _note_cache(gw, None, None)
         if hit is not None:
             gw.stats.record(body.model, "cache", 200)
+            _note_cache(gw, hit.layer, hit.similarity)
+            rec = current_record.get()
+            if rec:
+                rec.cache_layer = hit.layer
+                rec.answered("cache", "", 0)
             headers = {
                 **base_headers,
                 "X-Gateway-Provider": hit.entry.provider,
@@ -424,6 +492,8 @@ async def _serve(
             shared = await joined.wait(policy.total_timeout_s)
             if shared is not None:
                 gw.stats.record(body.model, shared.provider.split(":", 1)[0], 200)
+                if current_record.get():
+                    current_record.get().answered(shared.provider.split(":", 1)[0], "", shared.depth)
                 return await _replay(shared, body, base_headers, cleanups)
             # The leader failed: this request runs on its own, without a flight.
 
@@ -464,6 +534,13 @@ async def _serve(
     if gate is not None and gate.skipped:
         headers["X-Budget-Skipped"] = ",".join(dict.fromkeys(gate.skipped))
     gw.stats.record(body.model, target.provider, 200)
+    rec = current_record.get()
+    if rec:
+        rec.answered(target.provider, target.model, attempt.depth)
+        if attempt.completion is not None:
+            rec.usage = attempt.completion.get("usage")
+    if attempt.depth > 1 and gw.metrics:
+        gw.metrics.fallbacks.labels(chain[0].provider, target.provider).inc()
     meta = (attempt.completion if attempt.completion is not None else attempt.first or {}).pop("_meta", None)
     headers.update(_meta_headers(meta))
     if attempt.completion is not None:
@@ -600,3 +677,11 @@ def _meta_headers(meta: dict | None) -> dict[str, str]:
     if meta.get("effort"):
         out["X-Effort"] = str(meta["effort"])
     return out
+
+
+def _note_cache(gw: GatewayState, layer: str | None, similarity: float | None) -> None:
+    if gw.metrics is None:
+        return
+    gw.metrics.cache.labels(layer or "-", "hit" if layer else "miss").inc()
+    if similarity is not None:
+        gw.metrics.similarity.observe(similarity)

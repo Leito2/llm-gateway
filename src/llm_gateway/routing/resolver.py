@@ -1,4 +1,5 @@
 """Turn an alias policy into the chain of links that can actually run."""
+
 from collections.abc import Mapping
 
 from llm_gateway.routing.config import AliasPolicy, Target

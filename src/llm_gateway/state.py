@@ -1,4 +1,5 @@
 """Dependencies shared by the request handlers (stored in `app.state.gateway`)."""
+
 from dataclasses import dataclass
 
 import httpx
@@ -17,8 +18,11 @@ from llm_gateway.resilience.lifecycle import Lifecycle
 from llm_gateway.resilience.singleflight import Singleflight
 from llm_gateway.routing.config import RoutesConfig
 from llm_gateway.security.clients import ClientRegistry
+from llm_gateway.security.ratelimit import RateLimiter
 from llm_gateway.settings import Settings
+from llm_gateway.telemetry.metrics import Metrics
 from llm_gateway.telemetry.stats import Stats
+from llm_gateway.telemetry.tracing import Tracer
 
 
 @dataclass
@@ -40,3 +44,6 @@ class GatewayState:
     cache: CacheService | None = None
     prices: PriceBook | None = None
     budget: BudgetService | None = None
+    metrics: Metrics | None = None
+    ratelimit: RateLimiter | None = None
+    tracer: Tracer | None = None

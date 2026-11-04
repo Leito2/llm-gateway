@@ -36,3 +36,4 @@ checkpoints/
 Thumbs.db
 .idea/
 .vscode/
+observability/admin.key

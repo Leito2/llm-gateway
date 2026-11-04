@@ -1,5 +1,6 @@
 """Token buckets per provider. In memory for now: the gateway runs one worker (ADR-0003). Redis-backed
 buckets, which survive restarts, arrive with the budget in M5."""
+
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -8,9 +9,9 @@ from pydantic import BaseModel, Field
 
 
 class QuotaSpec(BaseModel):
-    rpm: int | None = Field(default=None, gt=0)     # requests per minute
-    tpm: int | None = Field(default=None, gt=0)     # tokens per minute
-    rpd: int | None = Field(default=None, gt=0)     # requests per day (UTC)
+    rpm: int | None = Field(default=None, gt=0)  # requests per minute
+    tpm: int | None = Field(default=None, gt=0)  # tokens per minute
+    rpd: int | None = Field(default=None, gt=0)  # requests per day (UTC)
 
 
 class _Bucket:
@@ -25,12 +26,17 @@ class _Bucket:
 
 
 class QuotaLimiter:
-    def __init__(self, specs: dict[str, QuotaSpec], *, clock: Callable[[], float] = time.monotonic,
-                 today: Callable[[], str] = lambda: datetime.now(UTC).date().isoformat()) -> None:
+    def __init__(
+        self,
+        specs: dict[str, QuotaSpec],
+        *,
+        clock: Callable[[], float] = time.monotonic,
+        today: Callable[[], str] = lambda: datetime.now(UTC).date().isoformat(),
+    ) -> None:
         self._specs, self._clock, self._today = specs, clock, today
         self._rpm = {p: _Bucket(s.rpm, clock()) for p, s in specs.items() if s.rpm}
         self._tpm = {p: _Bucket(s.tpm, clock()) for p, s in specs.items() if s.tpm}
-        self._day: dict[str, tuple[str, int]] = {}                  # provider -> (date, requests today)
+        self._day: dict[str, tuple[str, int]] = {}  # provider -> (date, requests today)
         self._blocked_until: dict[str, float] = {}
 
     def try_acquire(self, provider: str, tokens: int) -> bool:
@@ -42,7 +48,7 @@ class QuotaLimiter:
         need = 0
         if tpm:
             tpm.refill(now)
-            need = min(tokens, tpm.capacity)      # a prompt above the whole quota passes only when full
+            need = min(tokens, tpm.capacity)  # a prompt above the whole quota passes only when full
         if rpm:
             rpm.refill(now)
         day, used = self._day.get(provider, (self._today(), 0))

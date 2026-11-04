@@ -25,8 +25,8 @@ def _sha(key: str) -> str:
 def _write_configs() -> tuple[Path, Path]:
     all_aliases = list(load_routes(Path("config/routes.yaml")).aliases)
     clients = {"clients": {
-        "full": {"key_sha256": _sha(FULL_KEY), "allowed_aliases": all_aliases, "budget_usd_per_day": 5.0},
-        "demo": {"key_sha256": _sha(DEMO_KEY), "allowed_aliases": ["fast"]},
+        "full": {"key_sha256": _sha(FULL_KEY), "allowed_aliases": all_aliases, "budget_usd_per_day": 5.0, "rpm": 100000},
+        "demo": {"key_sha256": _sha(DEMO_KEY), "allowed_aliases": ["fast"], "rpm": 100000},
         "none": {"key_sha256": _sha(NO_ALIASES_KEY)},
     }}
     providers = yaml.safe_load(Path("config/providers.yaml").read_text(encoding="utf-8"))
