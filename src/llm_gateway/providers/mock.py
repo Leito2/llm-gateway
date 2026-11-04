@@ -5,12 +5,9 @@ import uuid
 from collections.abc import AsyncIterator
 
 from llm_gateway.api.schemas import ChatCompletionRequest
+from llm_gateway.pricing.tokens import content_text
 
-
-def _text(content: str | list[dict]) -> str:
-    if isinstance(content, str):
-        return content
-    return " ".join(p.get("text", "") for p in content if p.get("type") == "text")
+_text = content_text
 
 
 class MockProvider:

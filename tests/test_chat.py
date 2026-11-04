@@ -1,16 +1,11 @@
 import json
 
 from fastapi.testclient import TestClient
+from helpers import make_app, make_client
 
-from llm_gateway.main import create_app
 from llm_gateway.providers.mock import MockProvider
-from llm_gateway.settings import Settings
 
 MSG = [{"role": "user", "content": "hola mundo"}]
-
-
-def make_client(env: str = "test") -> TestClient:
-    return TestClient(create_app(Settings(env=env)))
 
 
 def sse_data(text: str) -> list[str]:
@@ -122,9 +117,10 @@ def test_stream_closes_the_provider_stream():
             finally:
                 closed.append(True)
 
-    app = create_app(Settings(env="test"))
+    app = make_app()
     app.state.gateway.providers["mock"] = Tracking()
-    TestClient(app).post("/v1/chat/completions", json={"model": "fast", "messages": MSG, "stream": True})
+    client = TestClient(app, headers=make_client().headers)
+    client.post("/v1/chat/completions", json={"model": "fast", "messages": MSG, "stream": True})
     assert closed == [True]
 
 

@@ -1,17 +1,15 @@
 """Contract test (G7, partial): the official OpenAI SDK works against the gateway unchanged."""
 import openai
 import pytest
-from fastapi.testclient import TestClient
+from helpers import FULL_KEY, make_client
 from openai import OpenAI
-
-from llm_gateway.main import create_app
-from llm_gateway.settings import Settings
 
 
 @pytest.fixture
 def sdk() -> OpenAI:
-    http = TestClient(create_app(Settings(env="test")))
-    return OpenAI(base_url="http://testserver/v1", api_key="test-key", http_client=http, max_retries=0)
+    # The SDK sends the key as `Authorization: Bearer ...` on its own, like any real client.
+    http = make_client(key=None)
+    return OpenAI(base_url="http://testserver/v1", api_key=FULL_KEY, http_client=http, max_retries=0)
 
 
 def test_chat_completion(sdk):

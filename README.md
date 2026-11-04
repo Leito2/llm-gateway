@@ -7,7 +7,7 @@
 > Shared by four portfolio systems: real-time fraud detection, a System 1/System 2 router, a live RAG platform,
 > and a GraphRAG multi-agent research system.
 
-**Status:** 🟡 M1 core (chat completions with streaming against a mock provider, chat UI at `/`, request stats). See [`PLAN.md`](PLAN.md) for the full design (Spanish).
+**Status:** 🟡 M2 providers (OpenAI-compatible adapter for Ollama/Groq/Google, per-client API keys, fallback, outbound quotas, chat UI at `/`). See [`PLAN.md`](PLAN.md) for the full design (Spanish).
 
 ## TL;DR — Results at a Glance
 _To be filled with measured numbers (overhead p95, budget under concurrency, cache hit rate) — milestone M9._

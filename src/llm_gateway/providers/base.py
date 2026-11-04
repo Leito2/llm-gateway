@@ -1,16 +1,23 @@
-"""The interface every provider adapter implements (implementations arrive in M1+)."""
+"""The interface every provider adapter implements."""
 from collections.abc import AsyncIterator
-from typing import Protocol
+from typing import Literal, Protocol
 
 from llm_gateway.api.schemas import ChatCompletionRequest
 
+# PLAN §3.1. transient: retry/fallback, counts for the breaker. provider: fallback, counts for the breaker.
+# client: the request itself is invalid, so it goes back to the client and no other provider is tried.
+ErrorKind = Literal["transient", "provider", "client"]
+
 
 class ProviderError(Exception):
-    """Raised by adapters; `retryable` tells the resilience layer whether to retry or fall back."""
+    """Raised by adapters; `kind` tells the resilience layer whether to retry, fall back or give up."""
 
-    def __init__(self, message: str, *, retryable: bool) -> None:
+    def __init__(self, message: str, *, kind: ErrorKind, status: int | None = None,
+                 retry_after: float | None = None) -> None:
         super().__init__(message)
-        self.retryable = retryable
+        self.kind = kind
+        self.status = status
+        self.retry_after = retry_after     # seconds, from the provider's Retry-After header
 
 
 class Provider(Protocol):

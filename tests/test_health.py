@@ -1,10 +1,8 @@
-from fastapi.testclient import TestClient
-
-from llm_gateway.main import create_app
+from helpers import make_client
 
 
-def client() -> TestClient:
-    return TestClient(create_app())
+def client():
+    return make_client()
 
 
 def test_healthz():

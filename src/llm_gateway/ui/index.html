@@ -73,6 +73,7 @@ let history = [], ctrl = null;
 // The page ships no key. What the user pastes lives in sessionStorage and goes away with the tab.
 try { keyEl.value = sessionStorage.getItem('gw_key') || ''; } catch (e) {}
 keyEl.addEventListener('input', () => { try { sessionStorage.setItem('gw_key', keyEl.value); } catch (e) {} });
+keyEl.addEventListener('change', () => loadAliases());
 const authHeaders = () => (keyEl.value ? { Authorization: 'Bearer ' + keyEl.value } : {});
 
 // Everything from the network goes in with textContent, never innerHTML.
@@ -202,13 +203,16 @@ async function refreshStats() {
   } catch (e) { statsEl.textContent = 'stats unavailable'; }
 }
 
+// The alias list depends on the key: the gateway only lists the aliases this client may use.
 async function loadAliases() {
+  aliasEl.replaceChildren();
   try {
-    const r = await fetch('/v1/models');
+    const r = await fetch('/v1/models', { headers: authHeaders() });
+    if (!r.ok) { aliasEl.append(el('option', '', r.status === 401 ? '(enter a valid API key)' : 'error ' + r.status)); return; }
     const ids = (await r.json()).data.map((m) => m.id);
     for (const id of ids) aliasEl.append(el('option', '', id));
     if (ids.includes('fast')) aliasEl.value = 'fast';
-  } catch (e) { aliasEl.append(el('option', '', 'fast')); }
+  } catch (e) { aliasEl.append(el('option', '', '(gateway unreachable)')); }
 }
 
 $('#form').addEventListener('submit', (ev) => { ev.preventDefault(); if (!ctrl) sendMessage(); });
