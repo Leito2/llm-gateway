@@ -88,6 +88,8 @@ class RequestRecord:
         if self.prompt_text is not None:
             line["prompt_redacted"] = self.prompt_text
         access_log.info(json.dumps(line, separators=(",", ":")))
+        if self.gw.langfuse is not None:
+            self.gw.langfuse.record(line)  # picks named fields only: never prompt_redacted
         self.span.set(
             {
                 "gen_ai.system": self.provider,

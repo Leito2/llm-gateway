@@ -82,10 +82,28 @@ def pii_kinds(text: str) -> set[str]:
 class Findings:
     injection: bool = False
     pii: frozenset[str] = frozenset()
+    model_score: float | None = None  # classifier probability, when a prompt-guard model is loaded
+    model_flagged: bool = False
 
     @property
     def flags(self) -> list[str]:
-        return [*(["injection"] if self.injection else []), *(f"pii:{k}" for k in sorted(self.pii))]
+        return [
+            *(["injection"] if self.injection else []),
+            *(["injection-model"] if self.model_flagged else []),
+            *(f"pii:{k}" for k in sorted(self.pii)),
+        ]
+
+    @property
+    def attack(self) -> bool:
+        """Either detector fired (what `enforce` blocks on)."""
+        return self.injection or self.model_flagged
+
+
+def scanned_text(messages: list[ChatMessage], untrusted: bool = False) -> str:
+    """The text the detectors look at: user messages, or every non-system message when untrusted."""
+    return " ".join(
+        content_text(m.content) for m in messages if m.role != "system" and (m.role == "user" or untrusted)
+    )
 
 
 def scan(messages: list[ChatMessage], untrusted: bool = False) -> Findings:

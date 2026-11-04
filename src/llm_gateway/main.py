@@ -18,6 +18,7 @@ from llm_gateway.cache.config import load_cache_config
 from llm_gateway.cache.embedder import build_embedder
 from llm_gateway.cache.memory import MemoryBackend
 from llm_gateway.cache.service import CacheService
+from llm_gateway.guardrails.promptguard import load_prompt_guard
 from llm_gateway.pricing.prices import load_prices
 from llm_gateway.providers.config import load_providers
 from llm_gateway.providers.registry import HTTP_TIMEOUT, build_providers
@@ -35,6 +36,7 @@ from llm_gateway.security.clients import load_clients
 from llm_gateway.security.ratelimit import RateLimiter
 from llm_gateway.settings import Settings
 from llm_gateway.state import GatewayState
+from llm_gateway.telemetry.langfuse import LangfuseExporter
 from llm_gateway.telemetry.metrics import Metrics
 from llm_gateway.telemetry.privacy import check_prompt_logging
 from llm_gateway.telemetry.record import configure_access_log
@@ -47,11 +49,15 @@ async def _lifespan(app: FastAPI):
     gw = app.state.gateway
     gw.lifecycle.attach(asyncio.get_running_loop())
     watcher = None
+    if gw.langfuse is not None:
+        gw.langfuse.start()
     if gw.settings.reload_interval_s > 0:
         watcher = asyncio.create_task(watch(gw, gw.settings.reload_interval_s))
     yield
     if watcher is not None:
         watcher.cancel()
+    if gw.langfuse is not None:
+        await gw.langfuse.stop()
     if gw.cache is not None:
         await gw.cache.flush()
     await gw.http.aclose()
@@ -105,6 +111,11 @@ def create_app(settings: Settings | None = None, tracer_provider=None) -> FastAP
         },
     )
     latency = LatencyTracker()
+    langfuse = None
+    if settings.langfuse_host and settings.langfuse_public_key and settings.langfuse_secret_key:
+        langfuse = LangfuseExporter(
+            settings.langfuse_host, settings.langfuse_public_key, settings.langfuse_secret_key, http
+        )
     executor = Executor(
         providers, breakers, bulkhead, quotas, tracer=tracer, latency=latency, on_hedge=metrics.hedges_hook
     )
@@ -132,6 +143,10 @@ def create_app(settings: Settings | None = None, tracer_provider=None) -> FastAP
         ratelimit=_build_ratelimit(settings),
         tracer=tracer,
         latency=latency,
+        langfuse=langfuse,
+        prompt_guard=load_prompt_guard(settings.models_dir / "prompt-guard")
+        if settings.guardrails_mode != "off"
+        else None,
     )
     install_error_handlers(app)
     app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_body_bytes)

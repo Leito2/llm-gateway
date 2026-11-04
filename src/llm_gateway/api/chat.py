@@ -6,6 +6,7 @@ import json
 import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from dataclasses import replace
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
@@ -15,10 +16,10 @@ from starlette.background import BackgroundTask
 from llm_gateway.api.errors import GatewayError, request_id
 from llm_gateway.api.schemas import ChatCompletionRequest
 from llm_gateway.budget.service import estimate_emitted
-from llm_gateway.guardrails.scan import Findings, scan
+from llm_gateway.guardrails.scan import Findings, scan, scanned_text
 from llm_gateway.guardrails.size import check_shape, count_images
 from llm_gateway.pricing.prices import Usage, reference_micro
-from llm_gateway.pricing.tokens import estimate_prompt_tokens
+from llm_gateway.pricing.tokens import content_text, estimate_prompt_tokens
 from llm_gateway.providers.base import ProviderError
 from llm_gateway.resilience.admission import effective_priority
 from llm_gateway.resilience.breaker import CircuitBreaker
@@ -28,6 +29,7 @@ from llm_gateway.routing.resolver import usable_chain
 from llm_gateway.security.auth import require_client
 from llm_gateway.state import GatewayState
 from llm_gateway.structured.validate import InvalidSchema, build_validator
+from llm_gateway.telemetry.privacy import redact
 from llm_gateway.telemetry.record import RequestRecord, current_record
 
 log = logging.getLogger(__name__)
@@ -316,6 +318,9 @@ async def chat_completions(
     span = gw.tracer.start_request(alias, request.headers, rid)
     rec = RequestRecord(gw, rid, client, alias, body.stream, span)
     token = current_record.set(rec)
+    if gw.settings.log_prompts:  # R22: only ever the Presidio-redacted text, and only the last user turn
+        last = next((m for m in reversed(body.messages) if m.role == "user"), None)
+        rec.prompt_text = redact(content_text(last.content)) if last else None
     try:
         await _check_rate_limit(gw, client, rid)
         resp = await _chat(gw, body, request, client, rid)
@@ -401,14 +406,20 @@ async def _chat(gw: GatewayState, body: ChatCompletionRequest, request: Request,
             cleanup()
 
 
-def _scan(gw: GatewayState, body: ChatCompletionRequest, headers: Mapping[str, str]) -> Findings | None:
+async def _scan(gw: GatewayState, body: ChatCompletionRequest, headers: Mapping[str, str]) -> Findings | None:
     """Injection/PII scan (stretch). `off` skips it; every finding is counted, `enforce` may then block."""
     mode = gw.settings.guardrails_mode
     if mode == "off":
         return None
-    found = scan(body.messages, untrusted=headers.get("x-untrusted-content", "").lower() == "true")
+    untrusted = headers.get("x-untrusted-content", "").lower() == "true"
+    found = scan(body.messages, untrusted=untrusted)
+    if gw.prompt_guard is not None:
+        score = await gw.prompt_guard.score(scanned_text(body.messages, untrusted)[:4000])
+        if score is not None:
+            flagged = score >= gw.settings.prompt_guard_threshold
+            found = replace(found, model_score=score, model_flagged=flagged)
     if gw.metrics:
-        if found.injection:
+        if found.attack:
             gw.metrics.guardrails.labels("injection", "block" if mode == "enforce" else "flag").inc()
         for _ in found.pii:
             gw.metrics.guardrails.labels("pii", "flag").inc()
@@ -462,10 +473,10 @@ async def _serve(
             param="messages",
             headers={"X-Request-Id": rid},
         )
-    findings = _scan(gw, body, request_headers)
+    findings = await _scan(gw, body, request_headers)
     if findings is not None and findings.flags:
         base_headers["X-Guardrail-Flags"] = ",".join(findings.flags)
-        if findings.injection and gw.settings.guardrails_mode == "enforce":
+        if findings.attack and gw.settings.guardrails_mode == "enforce":
             gw.stats.record(body.model, "-", 400)
             raise GatewayError(
                 400,

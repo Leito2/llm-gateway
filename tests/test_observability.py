@@ -346,3 +346,16 @@ def test_cors_opt_in_answers_preflights_exposes_gateway_headers_and_allows_priva
         assert "access-control-allow-origin" not in preflight(c, "https://evil.example").headers
         r = c.post("/v1/chat/completions", headers={**AUTH, "Origin": "https://page.example"}, json=BODY)
     assert "x-gateway-provider" in r.headers["access-control-expose-headers"].lower()
+
+
+def test_r22_with_real_presidio_the_logged_prompt_is_redacted(caplog):
+    pytest.importorskip("presidio_analyzer")
+    caplog.set_level(logging.INFO, logger="gateway.access")
+    text = "write to ana@example.com, card 4111 1111 1111 1111, DNI 12345678Z, http://x.test/a"
+    with TestClient(make_app(log_prompts=True)) as c:
+        assert chat(c, messages=[{"role": "user", "content": text}]).status_code == 200
+    line = [r for r in records(caplog) if r.get("prompt_redacted")][0]
+    redacted = line["prompt_redacted"]
+    assert "<EMAIL_ADDRESS>" in redacted and "<CREDIT_CARD>" in redacted and "<ES_DNI>" in redacted
+    for raw in ("ana@example.com", "4111 1111 1111 1111", "12345678Z"):
+        assert raw not in caplog.text
