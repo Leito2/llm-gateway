@@ -261,6 +261,11 @@ made the rest mechanical; every EARS requirement has a test, and the real-uvicor
 - Presidio runs for real (`uv sync --extra pii`) and redacts the prompt in the access log when `GW_LOG_PROMPTS=true`, but with a
   blank spaCy pipeline: only its pattern recognizers work (email, card, phone, IBAN, SSN, IP, URL, plus a Spanish DNI one), so
   names and places are logged as written. It does not redact outbound traffic.
+- Real providers: Google AI Studio (`gemma-4-31b-it`, free tier) was called through the gateway: a JSON answer came back, the
+  repeat was an exact cache hit, and a real upstream `HTTP 500` on streaming opened the breaker and fell down the chain. The
+  provider's SSE parsing was also run against `gemini-2.5-flash`. Gemma 4 returns its reasoning as the message text
+  (`<thought>…`) and reports `completion_tokens: 0`; the gateway passes that through. Groq, Anthropic and xAI (Grok, a different
+  service from Groq with `xai-` keys) were not called: no Groq or Anthropic key, and the xAI team has no credits. There is no xAI adapter yet.
 - Prompt Guard 2 is a gated Meta model; the ONNX classifier code (`guardrails/promptguard.py`) is tested only with a fake session
   and has never run on real weights. Without `models/prompt-guard/` the regex heuristic is all there is (default `monitor`). On a small hand-written set it catches every direct phrase and none of the paraphrased
   or obfuscated ones, and flags 3 of 40 benign prompts ("developer mode" on Android, "do anything now" in a song).
