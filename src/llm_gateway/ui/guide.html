@@ -318,7 +318,7 @@ uv run python -m bench.throughput     # G13, lento</code></pre><button type="but
     <li>G9 medido: hit exacto p95 2,0 ms y semántico p95 11,5 ms (e5-small), pero con un umbral fijado solo para la corrida porque G6 sigue abierto. G11 medido con tráfico Zipf sintético y solo caché exacta: 70–94 % del costo de referencia ahorrado según la forma del tráfico; el 30–40 % del plan depende de tráfico real y no se confirmó. El caos con Toxiproxy no se ha medido. El perfil <code>obs</code> se levantó en Docker: Prometheus raspa <code>/metrics</code> con la admin key, Jaeger recibe las trazas y el rate limit vive en Redis. Los tests de caché y budget también pasan contra un Redis 8 real.</li>
     <li>El adaptador de Anthropic se probó con fixtures, no contra streams reales.</li>
     <li>El guardrail de inyección/PII es un sustituto por regex. G14 sobre un set escrito a mano de 94 filas: recall de inyección 100 % en frases directas y 0 % en paráfrasis u ofuscación, 4,7 % de falsos positivos; PII recall 100 %, precisión 93 %.</li>
-    <li>Proveedores reales: Google AI Studio (<code>gemma-4-31b-it</code>) respondió a través del gateway, la repetición salió de la caché exacta, y un <code>HTTP 500</code> real de Google en streaming abrió el breaker y cayó al siguiente eslabón. Gemma 4 devuelve su razonamiento como texto (<code>&lt;thought&gt;</code>) y reporta 0 tokens de salida; el gateway lo pasa tal cual. Groq y Anthropic no se llamaron (sin key) y xAI (Grok, servicio distinto de Groq) no tiene créditos ni adaptador todavía.</li><li>Prompt Guard 2 no se ha ejecutado con los pesos reales (modelo gated). Langfuse se probó en una instancia autoalojada, no en Cloud. Presidio no detecta nombres (sin NER).</li>
+    <li>Proveedores reales: Google AI Studio (<code>gemma-4-31b-it</code>) respondió a través del gateway, la repetición salió de la caché exacta, y un <code>HTTP 500</code> real de Google en streaming abrió el breaker y cayó al siguiente eslabón. Gemma 4 devuelve su razonamiento como texto (<code>&lt;thought&gt;</code>) y reporta 0 tokens de salida; el gateway lo pasa tal cual. Groq también se llamó (<code>openai/gpt-oss-20b</code>, JSON y SSE por el gateway); sus modelos viejos daban 404 y <code>routes.yaml</code> ya usa <code>gpt-oss-20b</code> y <code>gpt-oss-120b</code>, que devuelven un campo <code>reasoning</code> junto al <code>content</code>. Anthropic no se llamó (sin key) y xAI (Grok, servicio distinto de Groq) no tiene créditos ni adaptador todavía.</li><li>Prompt Guard 2 no se ha ejecutado con los pesos reales (modelo gated). Langfuse se probó en una instancia autoalojada, no en Cloud. Presidio no detecta nombres (sin NER).</li>
     <li>El hedging, el reorden por EWMA y AIMD son opt-in y solo se probaron en proceso.</li>
   </ul>
 </section>
@@ -370,12 +370,12 @@ uv run python -m bench.throughput     # G13, lento</code></pre><button type="but
 
   // ---- simulated gateway ----
   var chains={
-    fast:[['groq','llama-3.1-8b-instant'],['ollama','qwen3:1.7b'],['mock','mock-fast']],
-    smart:[['google','gemma-4-31b-it'],['groq','llama-3.3-70b-versatile'],['ollama','qwen3:1.7b']],
+    fast:[['groq','openai/gpt-oss-20b'],['ollama','qwen3:1.7b'],['mock','mock-fast']],
+    smart:[['google','gemma-4-31b-it'],['groq','openai/gpt-oss-120b'],['ollama','qwen3:1.7b']],
     judge:[['ollama','gemma3:4b'],['mock','mock-judge']],
     vision:[['google','gemma-4-31b-it'],['mock','mock-vision']],
-    extract:[['google','gemma-4-26b-a4b-it'],['groq','llama-3.3-70b-versatile'],['ollama','qwen3:1.7b']],
-    smart_paid:[['anthropic','claude-haiku-5-5'],['groq','llama-3.3-70b-versatile'],['ollama','qwen3:1.7b']]
+    extract:[['google','gemma-4-26b-a4b-it'],['groq','openai/gpt-oss-120b'],['ollama','qwen3:1.7b']],
+    smart_paid:[['anthropic','claude-haiku-5-5'],['groq','openai/gpt-oss-120b'],['ollama','qwen3:1.7b']]
   };
   var cache={}, n=0;
   var INJ=/(ignore|disregard|forget)\b.{0,30}\b(previous|prior|above|all)\b.{0,20}\b(instructions?|prompts?)|ignora.{0,30}instrucciones/i;

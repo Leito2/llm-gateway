@@ -52,7 +52,7 @@ async def replay(requests: int, questions: int, zipf: float, wordings: int, seed
     gw = app.state.gateway
     gw.providers["groq"] = Priced()
     policy = gw.routes.aliases["fast"]
-    policy.chain = [Target(provider="groq", model="llama-3.3-70b-versatile")]
+    policy.chain = [Target(provider="groq", model="openai/gpt-oss-120b")]
     gw.executor.quotas = type(gw.quotas)({})  # free-tier rpm is not under test
 
     rng = random.Random(seed)

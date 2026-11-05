@@ -9,7 +9,7 @@
 aliases:
   fast:
     chain:
-      - { provider: groq, model: "llama-3.1-8b-instant" }
+      - { provider: groq, model: "openai/gpt-oss-20b" }
       - { provider: ollama, model: "qwen3:1.7b" }
       - { provider: ollama, model: "gemma3:1b", degraded: true }
       - { provider: mock, model: "mock-fast", degraded: true }
@@ -21,7 +21,7 @@ aliases:
   smart:
     chain:
       - { provider: google, model: "gemma-4-31b-it" }
-      - { provider: groq, model: "llama-3.3-70b-versatile" }
+      - { provider: groq, model: "openai/gpt-oss-120b" }
       - { provider: ollama, model: "qwen3:1.7b" }
       - { provider: ollama, model: "gemma3:1b", degraded: true }
       - { provider: mock, model: "mock-smart", degraded: true }
@@ -57,7 +57,7 @@ aliases:
   extract:                       # P4 knowledge-graph extraction (structured output)
     chain:
       - { provider: google, model: "gemma-4-26b-a4b-it" }
-      - { provider: groq, model: "llama-3.3-70b-versatile" }
+      - { provider: groq, model: "openai/gpt-oss-120b" }
       - { provider: ollama, model: "qwen3:1.7b" }
     max_tokens: 1024
     cache: true
@@ -67,7 +67,7 @@ aliases:
   smart_paid:
     chain:
       - { provider: anthropic, model: "claude-haiku-5-5" }   # skipped when the budget does not fit (ADR-0004)
-      - { provider: groq, model: "llama-3.3-70b-versatile" }
+      - { provider: groq, model: "openai/gpt-oss-120b" }
       - { provider: ollama, model: "qwen3:1.7b" }
     max_tokens: 768
     max_input_tokens: 100000     # stay in Haiku 5.5's cheap tier (ADR-0005)
