@@ -7,7 +7,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="GW_", env_file=".env", extra="ignore")
+    # env_ignore_empty: a blank `GW_GROQ_API_KEY=` in .env means "not set", never an empty key
+    model_config = SettingsConfigDict(
+        env_prefix="GW_", env_file=".env", extra="ignore", env_ignore_empty=True
+    )
 
     env: Literal["dev", "test", "prod"] = "dev"  # the mock provider only exists in dev and test
     routes_file: Path = Path("config/routes.yaml")

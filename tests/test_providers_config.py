@@ -51,3 +51,15 @@ def test_paid_providers_need_both_a_key_and_a_run_budget():
 
 def test_quotas_come_from_the_yaml():
     assert CONFIG.providers["groq"].quotas.rpm == 30 and CONFIG.providers["google"].quotas.rpd == 1000
+
+
+def test_blank_values_in_dotenv_mean_not_set(tmp_path):
+    from llm_gateway.settings import Settings
+
+    env = tmp_path / ".env"
+    env.write_text(
+        "GW_GROQ_API_KEY=\nGW_ANTHROPIC_API_KEY=\nGW_ADMIN_KEY_SHA256=\nGW_OTEL_ENDPOINT=\nGW_RUN_BUDGET_USD=1.0\n"
+    )
+    s = Settings(_env_file=env)
+    assert s.groq_api_key is None and s.anthropic_api_key is None
+    assert s.admin_key_sha256 is None and s.otel_endpoint is None and s.run_budget_usd == 1.0
