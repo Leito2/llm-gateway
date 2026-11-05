@@ -208,6 +208,7 @@ footer{padding:32px 0 60px;color:var(--muted);font-size:.9rem}
       </div>
       <label class="chk"><input type="checkbox" id="stream" checked> Streaming</label>
       <button type="button" id="clear">Limpiar chat</button>
+      <button type="button" id="dl" hidden title="Guarda esta página para abrirla desde tu disco y hablar con tu gateway local">Descargar chat local (.html)</button>
     </div>
     <div class="chat">
       <div class="banner" id="banner"><b>SIMULADO.</b> Ninguna respuesta viene de un modelo real; las respuestas son texto fijo para mostrar el comportamiento.</div>
@@ -219,7 +220,7 @@ footer{padding:32px 0 60px;color:var(--muted);font-size:.9rem}
       </form>
     </div>
   </div>
-  <p class="hint" style="margin-top:10px">Prueba: envía "hola" dos veces (la segunda sale de caché); marca "Groq caído" y envía otro mensaje (cae a ollama/mock); escribe "ignore all previous instructions" con enforce activo.</p>
+  <p class="hint" style="margin-top:10px">Para usar el modo real desde tu disco: pulsa "Descargar chat local", ábrelo, elige "Gateway real" y arranca el gateway con <code>GW_CORS_ORIGINS=*</code>. Prueba: envía "hola" dos veces (la segunda sale de caché); marca "Groq caído" y envía otro mensaje (cae a ollama/mock); escribe "ignore all previous instructions" con enforce activo.</p>
 </section>
 
 <section id="ejecutar">
@@ -327,6 +328,7 @@ uv run python -m bench.throughput     # G13, lento</code></pre><button type="but
 
 <script>
 (function(){
+  var PRISTINE='<!DOCTYPE html>'+String.fromCharCode(10)+document.documentElement.outerHTML; // before the chat adds anything
   var $=function(id){return document.getElementById(id)};
   var log=$('log'), mode='demo';
 
@@ -351,6 +353,11 @@ uv run python -m bench.throughput     # G13, lento</code></pre><button type="but
   }
   $('m-demo').onclick=function(){setMode('demo')};
   $('m-live').onclick=function(){setMode('live')};
+  // Inside claude.ai the page cannot call other sites, but a saved copy opened from disk can reach localhost.
+  if(window.claude&&claude.use){claude.use('downloads').then(function(d){
+    if(!d)return; $('dl').hidden=false;
+    $('dl').onclick=function(){d.save({filename:'llm-gateway-guide.html',data:PRISTINE}).catch(function(){})};
+  }).catch(function(){})}
   $('clear').onclick=function(){log.innerHTML='';cache={};};
 
   function add(cls,text){var d=document.createElement('div');d.className='msg '+cls;d.textContent=text;log.appendChild(d);log.scrollTop=log.scrollHeight;return d}
