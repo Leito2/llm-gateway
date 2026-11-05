@@ -264,8 +264,10 @@ made the rest mechanical; every EARS requirement has a test, and the real-uvicor
 - Prompt Guard 2 is a gated Meta model; the ONNX classifier code (`guardrails/promptguard.py`) is tested only with a fake session
   and has never run on real weights. Without `models/prompt-guard/` the regex heuristic is all there is (default `monitor`). On a small hand-written set it catches every direct phrase and none of the paraphrased
   or obfuscated ones, and flags 3 of 40 benign prompts ("developer mode" on Android, "do anything now" in a song).
-- Langfuse export (`GW_LANGFUSE_*`) goes through its OTLP/HTTP endpoint (its legacy ingestion API is deprecated); the tests only
-  check the endpoint, Basic auth and `x-langfuse-ingestion-version` header it is configured with, never a real Langfuse. Hot reload covers routes, client keys and prices, not providers or budget caps.
+- Langfuse export (`GW_LANGFUSE_*`) goes through its OTLP/HTTP endpoint (its legacy ingestion API is deprecated); the unit tests only
+  check the endpoint, Basic auth and `x-langfuse-ingestion-version` header it is configured with. It was also run against a self-hosted
+  Langfuse 4.75 (official compose file): `gateway.request` and `provider.attempt` observations arrived with the model and the token usage
+  (input/output). Langfuse Cloud and prompt/cost views were not checked. Hot reload covers routes, client keys and prices, not providers or budget caps.
 - Hedging, EWMA reordering and the adaptive bulkhead are opt-in per alias / provider and tested in-process only.
 
 **Why not LiteLLM.** LiteLLM is the reference baseline (G2, optional). This project exists to own the failure semantics

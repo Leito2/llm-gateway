@@ -99,8 +99,9 @@ def export_targets(settings) -> list[ExportTarget]:
     Langfuse's legacy ingestion API is deprecated (Cloud serves it only until 2026-11-16), so the export goes
     through its OTLP/HTTP endpoint: `{host}/api/public/otel`, HTTP Basic public:secret, and the header
     `x-langfuse-ingestion-version: 4` its docs ask direct OTLP exporters to send. The spans carry GenAI
-    attributes and never prompt text. Not run against a real Langfuse; the auth scheme, the endpoint and
-    the header come from its docs, the attribute mapping on its side is not verified here."""
+    attributes and never prompt text. Run against a self-hosted Langfuse 4.75: the spans arrive as
+    observations
+    with the model and the input/output token usage. Langfuse Cloud is not checked."""
     targets: list[ExportTarget] = []
     if settings.otel_endpoint:
         targets.append((settings.otel_endpoint, {}))
