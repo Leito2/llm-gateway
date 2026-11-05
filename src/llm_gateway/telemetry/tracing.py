@@ -10,6 +10,7 @@ import logging
 from collections.abc import Iterator, Mapping
 
 from opentelemetry import context, trace
+from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import Status, StatusCode
@@ -123,7 +124,7 @@ def build_tracer(targets: list[ExportTarget], provider: TracerProvider | None = 
         except ImportError:
             log.warning("a trace export is configured but the OTLP exporter is missing: uv sync --extra otel")
             return Tracer()
-        provider = TracerProvider()
+        provider = TracerProvider(resource=Resource.create({"service.name": "llm-gateway"}))
         for endpoint, headers in targets:
             exporter = OTLPSpanExporter(endpoint=endpoint.rstrip("/") + "/v1/traces", headers=headers or None)
             provider.add_span_processor(BatchSpanProcessor(exporter))

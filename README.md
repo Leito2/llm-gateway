@@ -135,7 +135,7 @@ registered only when `GW_ANTHROPIC_API_KEY` is set **and** `GW_RUN_BUDGET_USD > 
 | G5 cancellation + Go regression | ✅ | `tests/test_streaming.py` (real uvicorn) |
 | G6 semantic cache quality | 🟡 harness + 42 seed pairs; ~1,000 labeled pairs pending | `scripts/calibrate_cache.py` |
 | G7 contracts | ✅ | `tests/test_openai_sdk.py` (official OpenAI SDK) |
-| G8 chaos | 🟡 mock-based; Toxiproxy/Redis chaos pending (no Docker here) | `tests/test_resilience.py` |
+| G8 chaos | 🟡 mock-based; Toxiproxy/Redis chaos pending | `tests/test_resilience.py` |
 | G9 hit latency | ✅ exact p95 2.0 ms; semantic p95 11.5 ms (target <60 ms), e5-small, threshold set for the run only | `bench/hits.py` |
 | G10 availability | ✅ 99.98% | `bench/availability.py`, nightly workflow |
 | G11 cost saved | 🟡 synthetic Zipf, exact cache only: 70–94 % of reference cost saved depending on traffic shape; real P2/P3 traffic not available | `bench/savings.py` |
@@ -253,7 +253,7 @@ made the rest mechanical; every EARS requirement has a test, and the real-uvicor
 
 **Limitations (honest list).**
 - Semantic thresholds are **uncalibrated**: the cache runs in observation mode until ~1,000 labeled pairs exist and the
-  precision/coverage curves are measured for several embedders. The gray-zone verifier model is not built. The Redis cache backend (`GW_CACHE_BACKEND=redis`) is tested only on fakeredis, ranks vectors in Python instead of using the Redis 8 Query Engine (HNSW), and has not run against a real Redis.
+  precision/coverage curves are measured for several embedders. The gray-zone verifier model is not built. The Redis cache backend (`GW_CACHE_BACKEND=redis`) passes its tests on fakeredis and, with the Redis client swapped for a real Redis 8 server, the same 52 cache and budget tests (including the Lua budget scripts); it ranks vectors in Python instead of using the Redis 8 Query Engine (HNSW). The `make up-obs` stack (gateway, Redis, Prometheus, Grafana, Jaeger) was brought up in Docker: Prometheus scrapes `/metrics` with the admin key, Jaeger receives the traces, and the per-client rate limit lives in Redis. A cache hit through that stack was not exercised, because no real provider (Ollama or a key) was available and the mock is `degraded`, which is never cached.
 - G11 uses synthetic Zipf traffic, so the PLAN's 30–40 % claim is untested on real traffic; G9's semantic threshold was set
   just for the run (G6 is open). The Toxiproxy chaos suite is not measured yet.
 - The Anthropic adapter is tested against fixtures written from the documented API, not against real streams.

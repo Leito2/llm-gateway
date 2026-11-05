@@ -4,7 +4,8 @@ WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy PYTHONUNBUFFERED=1 GW_ENV=prod
 COPY pyproject.toml README.md ./
 COPY src ./src
-RUN uv sync --no-dev
+RUN uv sync --no-dev --extra otel
 COPY config ./config
+ENV PATH="/app/.venv/bin:$PATH"
 EXPOSE 8080
-CMD ["uv", "run", "uvicorn", "llm_gateway.main:app", "--host", "0.0.0.0", "--port", "8080", "--timeout-graceful-shutdown", "12"]
+CMD ["uvicorn", "llm_gateway.main:app", "--host", "0.0.0.0", "--port", "8080", "--timeout-graceful-shutdown", "12"]
