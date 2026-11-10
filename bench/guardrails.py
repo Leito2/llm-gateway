@@ -67,7 +67,10 @@ def main() -> dict:
             "missed": pii_missed,
             "false_positives": pii_false,
         },
-        "note": "hand-written set; heuristic stand-in for Prompt Guard 2 / Presidio, which were not built",
+        "note": (
+            "hand-written set; regex heuristic only (the Prompt Guard 2 classifier has not run on real "
+            "weights; Presidio redacts logs and is not scored here)"
+        ),
     }
 
 

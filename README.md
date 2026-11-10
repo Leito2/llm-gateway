@@ -17,13 +17,13 @@ Measured on a Windows 11 laptop (8 cores), gateway + upstream + load generator o
 
 | What | Result | Gate |
 |---|---|---|
-| Tests | **295 passing**, lint clean, every EARS requirement R01–R23 traced to a test | CI on every push |
+| Tests | **366 passing**, lint clean, every EARS requirement R01–R23 traced to a test | CI on every push |
 | Budget under concurrency | 50 concurrent requests against a cap that fits 10 → **exactly 10 reserved, 0 overspend** (memory store and Redis Lua) | G3 ✅ |
 | Availability with a sick primary | 10,000 requests, primary failing 40% of calls (503 / 429 / slow) → **99.98% success** (9,998 × 200) | G10 ✅ (≥ 99.9%) |
 | Overhead, no cache | **+6.9 ms p50 / +10.4 ms p95 / +14.0 ms p99** over calling the upstream directly at 100 req/s | G1 ⚠️ missed the < 5 ms p95 target on this setup |
 | Overhead, semantic cache *miss* (e5-small embedding + KNN) | **+17.5 ms p50 / +27.7 ms p95** on top of the no-cache path, at 20 req/s | G1 (second number) |
 | Exact-cache throughput | **≈ 1,200 req/s** on one worker | G13 (the Go figure is not reproduced; see below) |
-| Provider calls saved by the cache | exact hits cost 0 provider calls, 0 quota, 0 bulkhead slots | G11 harness pending real traffic |
+| Provider calls saved by the cache | exact hits cost 0 provider calls, 0 quota, 0 bulkhead slots; synthetic Zipf traffic: **70–94 %** of reference cost saved | G11 🟡 synthetic traffic only; real traffic not measured |
 
 What these numbers do **not** say: the load generator is Python/httpx on the same box, so absolute latencies include
 its own overhead — read the *difference* between "direct" and "through the gateway". Windows has no `SO_REUSEPORT`, so
